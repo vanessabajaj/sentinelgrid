@@ -1,4 +1,5 @@
 import {
+  formatClockTime,
   formatEnumLabel,
   formatTimestamp,
 } from "@/features/sentinel/components/display-utils";
@@ -138,6 +139,27 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
               </ol>
             </div>
           </div>
+
+          {result.analysis.timeline.length > 0 ? (
+            <div className="mt-5 border-t border-border pt-5">
+              <h3 className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted">
+                Attack timeline
+              </h3>
+              <ol className="mt-3 space-y-3">
+                {result.analysis.timeline.map((event) => (
+                  <li
+                    key={`${event.timestamp}-${event.description}`}
+                    className="flex gap-4 text-sm leading-5"
+                  >
+                    <span className="w-14 shrink-0 font-mono text-[11px] font-semibold text-accent">
+                      {formatClockTime(event.timestamp)}
+                    </span>
+                    <span className="text-foreground">{event.description}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
 
           <div className="mt-5 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-end sm:justify-between">
             <div className="w-full max-w-xs">

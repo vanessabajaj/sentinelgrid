@@ -3,6 +3,7 @@ import { SentinelWorkspace } from "@/features/sentinel/components/sentinel-works
 import {
   getEnvironments,
   listAuditEntries,
+  listWorkloads,
 } from "@/features/sentinel/server/sentinel-store";
 
 export default function Home() {
@@ -54,6 +55,7 @@ export default function Home() {
         <SentinelWorkspace
           initialEnvironments={getEnvironments()}
           initialAuditEntries={listAuditEntries()}
+          initialWorkloads={listWorkloads()}
           demoIncidents={mockIncidents}
         />
       </div>

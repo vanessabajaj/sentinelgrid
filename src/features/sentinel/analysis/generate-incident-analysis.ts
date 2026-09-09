@@ -1,3 +1,5 @@
+import { firstMatch } from "@/features/sentinel/analysis/extract-signal";
+import { generateAttackTimeline } from "@/features/sentinel/analysis/generate-attack-timeline";
 import type {
   Incident,
   IncidentAnalysis,
@@ -83,10 +85,6 @@ const ANALYSIS_TEMPLATES: Record<IncidentType, AnalysisTemplate> = {
     baseConfidence: 84,
   },
 };
-
-function firstMatch(content: string, pattern: RegExp): string | null {
-  return content.match(pattern)?.[1] ?? null;
-}
 
 function buildIndicators(incident: Incident): IndicatorResult {
   const content = incident.sampleContent;
@@ -207,5 +205,6 @@ export function generateIncidentAnalysis(
     recommendedActions: [...template.recommendedActions],
     confidence,
     generatedAt: incident.submittedAt,
+    timeline: generateAttackTimeline(incident),
   };
 }

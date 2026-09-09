@@ -115,6 +115,13 @@ export interface WorkloadResult {
   analysis: IncidentAnalysis | null;
 }
 
+/** One chronological event in a reconstructed attack timeline. */
+export interface AttackTimelineEvent {
+  /** ISO 8601 timestamp of the event. */
+  timestamp: string;
+  description: string;
+}
+
 export interface IncidentAnalysis {
   severity: Severity;
   summary: string;
@@ -124,6 +131,7 @@ export interface IncidentAnalysis {
   /** Confidence percentage from 0 to 100. */
   confidence: number;
   generatedAt: string;
+  timeline: AttackTimelineEvent[];
 }
 
 export type DeploymentStatus = "ACTIVE" | "UPDATE_PENDING" | "DEPLOYING";

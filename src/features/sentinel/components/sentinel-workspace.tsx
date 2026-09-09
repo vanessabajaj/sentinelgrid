@@ -8,6 +8,7 @@ import { DeploymentPanel } from "@/features/sentinel/components/deployment-panel
 import { EnvironmentGrid } from "@/features/sentinel/components/environment-grid";
 import { IncidentAnalysis } from "@/features/sentinel/components/incident-analysis";
 import { IncidentForm } from "@/features/sentinel/components/incident-form";
+import { RecentWorkloads } from "@/features/sentinel/components/recent-workloads";
 import { RoutingDecision } from "@/features/sentinel/components/routing-decision";
 import { POLICY_VERSION } from "@/features/sentinel/routing/policy-config";
 import type {
@@ -21,6 +22,7 @@ import type {
 interface SentinelWorkspaceProps {
   initialEnvironments: Environment[];
   initialAuditEntries: AuditEntry[];
+  initialWorkloads: WorkloadResult[];
   demoIncidents: Incident[];
 }
 
@@ -28,6 +30,7 @@ interface WorkspaceState {
   environments: Environment[];
   latestResult: WorkloadResult | null;
   auditEntries: AuditEntry[];
+  workloads: WorkloadResult[];
   isSubmitting: boolean;
   error: string | null;
 }
@@ -39,7 +42,8 @@ type WorkspaceAction =
       type: "submission-completed";
       result: WorkloadResult;
       environments: Environment[];
-    };
+    }
+  | { type: "workload-selected"; workload: WorkloadResult };
 
 function toAuditEntry(result: WorkloadResult): AuditEntry {
   return {
@@ -70,7 +74,10 @@ function workspaceReducer(
         environments: action.environments,
         latestResult: action.result,
         auditEntries: [toAuditEntry(action.result), ...state.auditEntries],
+        workloads: [action.result, ...state.workloads],
       };
+    case "workload-selected":
+      return { ...state, latestResult: action.workload };
     default:
       return state;
   }
@@ -79,15 +86,21 @@ function workspaceReducer(
 export function SentinelWorkspace({
   initialEnvironments,
   initialAuditEntries,
+  initialWorkloads,
   demoIncidents,
 }: SentinelWorkspaceProps) {
   const [state, dispatch] = useReducer(workspaceReducer, {
     environments: initialEnvironments,
     latestResult: null,
     auditEntries: initialAuditEntries,
+    workloads: initialWorkloads,
     isSubmitting: false,
     error: null,
   });
+
+  const handleSelectWorkload = useCallback((workload: WorkloadResult) => {
+    dispatch({ type: "workload-selected", workload });
+  }, []);
 
   const handleSubmit = useCallback(async (submission: IncidentSubmission) => {
     dispatch({ type: "submission-started" });
@@ -145,6 +158,12 @@ export function SentinelWorkspace({
       />
 
       <DeploymentPanel />
+
+      <RecentWorkloads
+        workloads={state.workloads}
+        selectedIncidentId={state.latestResult?.incident.id ?? null}
+        onSelect={handleSelectWorkload}
+      />
 
       <AuditLog entries={state.auditEntries} />
     </div>
