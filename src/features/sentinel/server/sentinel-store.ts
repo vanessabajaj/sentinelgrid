@@ -7,12 +7,34 @@ import { generateIncidentAnalysis } from "@/features/sentinel/analysis/generate-
 import { evaluateRouting } from "@/features/sentinel/routing/evaluate-routing";
 import { POLICY_VERSION } from "@/features/sentinel/routing/policy-config";
 import type {
+  AirGapDeploymentResult,
   AuditEntry,
+  DeploymentPipelineStep,
   Environment,
   Incident,
   IncidentSubmission,
+  ModelArtifact,
   WorkloadResult,
 } from "@/features/sentinel/types";
+
+/**
+ * Synthetic demo artifact. The SHA256 below is illustrative, not a hash of
+ * any real build output — it exists to show "one signed artifact, deployed
+ * consistently everywhere" in the deployment management view.
+ */
+const MODEL_NAME = "SentinelAI";
+const MODEL_LATEST_VERSION = "2.4.1";
+const MODEL_SHA256 =
+  "91a7f3c2b8e4d16a5f0c9b3e7d2a1f4c6b8e0d3a5f7c9b1e3d5a7f9c1b3e5d20bf";
+
+const AIR_GAP_PIPELINE_STEPS = [
+  "Signed artifact staged",
+  "Security verification",
+  "Manual transfer",
+  "Air-gap import",
+  "Checksum verification",
+  "Deployment",
+] as const;
 
 /**
  * In-memory job orchestrator for the SentinelGrid demo. It holds the mutable
@@ -28,8 +50,11 @@ interface SentinelStoreState {
   environments: Environment[];
   workloads: WorkloadResult[];
   auditEntries: AuditEntry[];
+  modelArtifact: ModelArtifact;
   sequence: number;
 }
+
+const BASELINE_DEPLOYED_AT = "2026-09-01T00:00:00.000Z";
 
 function createInitialState(): SentinelStoreState {
   return {
@@ -39,6 +64,33 @@ function createInitialState(): SentinelStoreState {
     })),
     workloads: [],
     auditEntries: [],
+    modelArtifact: {
+      name: MODEL_NAME,
+      latestVersion: MODEL_LATEST_VERSION,
+      sha256: MODEL_SHA256,
+      deployments: [
+        {
+          environmentId: "CLOUD",
+          version: MODEL_LATEST_VERSION,
+          status: "ACTIVE",
+          deployedAt: BASELINE_DEPLOYED_AT,
+        },
+        {
+          environmentId: "ON_PREM",
+          version: MODEL_LATEST_VERSION,
+          status: "ACTIVE",
+          deployedAt: BASELINE_DEPLOYED_AT,
+        },
+        {
+          environmentId: "AIR_GAPPED",
+          // Air-gapped enclaves lag behind cloud/on-prem until an operator
+          // manually carries a verified artifact across the boundary.
+          version: "2.3.8",
+          status: "UPDATE_PENDING",
+          deployedAt: BASELINE_DEPLOYED_AT,
+        },
+      ],
+    },
     sequence: 0,
   };
 }
@@ -69,8 +121,44 @@ export function listAuditEntries(): AuditEntry[] {
   return getState().auditEntries;
 }
 
+export function getModelArtifact(): ModelArtifact {
+  return getState().modelArtifact;
+}
+
 export function resetStore(): void {
   globalForSentinel.__sentinelStore__ = createInitialState();
+}
+
+/**
+ * Simulates carrying the signed model artifact across the air-gap boundary:
+ * verify the signature, transfer, import, verify the checksum, then deploy.
+ * Returns the full pipeline trail alongside the updated artifact so the UI
+ * can show each step, matching the deployment flow in the project README.
+ */
+export function deployModelToAirGap(): AirGapDeploymentResult {
+  const state = getState();
+  const airGapDeployment = state.modelArtifact.deployments.find(
+    (deployment) => deployment.environmentId === "AIR_GAPPED",
+  );
+
+  if (!airGapDeployment) {
+    throw new Error("Air-gapped deployment record was not present.");
+  }
+
+  const now = new Date();
+  const steps: DeploymentPipelineStep[] = AIR_GAP_PIPELINE_STEPS.map(
+    (name, index) => ({
+      name,
+      // Offset each step by a second so the trail reads as a real sequence.
+      completedAt: new Date(now.getTime() + index * 1000).toISOString(),
+    }),
+  );
+
+  airGapDeployment.version = state.modelArtifact.latestVersion;
+  airGapDeployment.status = "ACTIVE";
+  airGapDeployment.deployedAt = steps[steps.length - 1].completedAt;
+
+  return { artifact: state.modelArtifact, steps };
 }
 
 function nextIncidentId(sequence: number): string {

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  deployModelToAirGap,
   getEnvironments,
+  getModelArtifact,
   listAuditEntries,
   listWorkloads,
   resetStore,
@@ -100,6 +102,35 @@ describe("sentinel-store", () => {
     expect(result.outcome).toBe("BLOCKED");
     expect(result.decision?.selectedEnvironment).toBeNull();
     expect(result.analysis).toBeNull();
+  });
+
+  it("starts with the air-gapped environment behind the latest model version", () => {
+    const artifact = getModelArtifact();
+    const airGap = artifact.deployments.find(
+      (deployment) => deployment.environmentId === "AIR_GAPPED",
+    );
+    const cloud = artifact.deployments.find(
+      (deployment) => deployment.environmentId === "CLOUD",
+    );
+
+    expect(airGap?.status).toBe("UPDATE_PENDING");
+    expect(airGap?.version).not.toBe(artifact.latestVersion);
+    expect(cloud?.status).toBe("ACTIVE");
+    expect(cloud?.version).toBe(artifact.latestVersion);
+  });
+
+  it("deploys the latest artifact to the air-gapped environment through the transfer pipeline", () => {
+    const result = deployModelToAirGap();
+    const airGap = result.artifact.deployments.find(
+      (deployment) => deployment.environmentId === "AIR_GAPPED",
+    );
+
+    expect(airGap?.status).toBe("ACTIVE");
+    expect(airGap?.version).toBe(result.artifact.latestVersion);
+    expect(result.steps.length).toBeGreaterThan(0);
+    expect(result.steps.map((step) => step.name)).toContain(
+      "Checksum verification",
+    );
   });
 
   it("resets to a clean baseline", () => {

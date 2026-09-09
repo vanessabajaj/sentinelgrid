@@ -4,6 +4,7 @@ import { useCallback, useReducer } from "react";
 
 import { AuditLog } from "@/features/sentinel/components/audit-log";
 import { DashboardSummary } from "@/features/sentinel/components/dashboard-summary";
+import { DeploymentPanel } from "@/features/sentinel/components/deployment-panel";
 import { EnvironmentGrid } from "@/features/sentinel/components/environment-grid";
 import { IncidentAnalysis } from "@/features/sentinel/components/incident-analysis";
 import { IncidentForm } from "@/features/sentinel/components/incident-form";
@@ -142,6 +143,8 @@ export function SentinelWorkspace({
         environments={state.environments}
         decision={state.latestResult?.decision ?? null}
       />
+
+      <DeploymentPanel />
 
       <AuditLog entries={state.auditEntries} />
     </div>

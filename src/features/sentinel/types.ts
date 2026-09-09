@@ -125,3 +125,36 @@ export interface IncidentAnalysis {
   confidence: number;
   generatedAt: string;
 }
+
+export type DeploymentStatus = "ACTIVE" | "UPDATE_PENDING" | "DEPLOYING";
+
+/** The version of the model artifact deployed to one environment. */
+export interface ModelDeployment {
+  environmentId: EnvironmentId;
+  version: string;
+  status: DeploymentStatus;
+  deployedAt: string;
+}
+
+/**
+ * One signed model artifact and where each environment stands relative to
+ * its latest version. Demonstrates "the same artifact deployed everywhere"
+ * across trust boundaries, including the air-gapped one-way transfer.
+ */
+export interface ModelArtifact {
+  name: string;
+  latestVersion: string;
+  sha256: string;
+  deployments: ModelDeployment[];
+}
+
+/** One step in the air-gapped deployment pipeline's audit trail. */
+export interface DeploymentPipelineStep {
+  name: string;
+  completedAt: string;
+}
+
+export interface AirGapDeploymentResult {
+  artifact: ModelArtifact;
+  steps: DeploymentPipelineStep[];
+}
