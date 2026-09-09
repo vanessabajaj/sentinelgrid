@@ -6,6 +6,7 @@ import { formatEnumLabel } from "@/features/sentinel/components/display-utils";
 import type {
   Classification,
   Incident,
+  IncidentSubmission,
   IncidentType,
   NetworkMode,
   Severity,
@@ -13,7 +14,9 @@ import type {
 
 interface IncidentFormProps {
   demoIncidents: Incident[];
-  onEvaluate: (incident: Incident) => void;
+  onSubmit: (submission: IncidentSubmission) => void | Promise<void>;
+  isSubmitting: boolean;
+  error: string | null;
 }
 
 type IncidentDraft = Omit<Incident, "id" | "sampleContent" | "submittedAt">;
@@ -50,7 +53,9 @@ const INPUT_CLASS_NAME =
 
 export function IncidentForm({
   demoIncidents,
-  onEvaluate,
+  onSubmit,
+  isSubmitting,
+  error,
 }: IncidentFormProps) {
   const [draft, setDraft] = useState<IncidentDraft>(EMPTY_DRAFT);
   const [selectedDemoId, setSelectedDemoId] = useState("");
@@ -86,15 +91,12 @@ export function IncidentForm({
     const selectedDemo = demoIncidents.find(
       (incident) => incident.id === selectedDemoId,
     );
-    const submittedAt = new Date().toISOString();
 
-    onEvaluate({
+    void onSubmit({
       ...draft,
-      id: `INC-SESSION-${Date.now()}`,
       sampleContent:
         selectedDemo?.sampleContent ??
         "SYNTHETIC: Local analyst-created demonstration incident.",
-      submittedAt,
     });
   }
 
@@ -316,16 +318,26 @@ export function IncidentForm({
           />
         </div>
 
+        {error ? (
+          <div
+            role="alert"
+            className="rounded-md border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-danger"
+          >
+            {error}
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted">
-            Local simulation · no data leaves this browser
+            Submitted to the SentinelGrid policy engine and classifier
           </p>
           <button
             type="submit"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-[#041512] transition-colors hover:bg-[#62e5d7] focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-panel"
+            disabled={isSubmitting}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-[#041512] transition-colors hover:bg-[#62e5d7] focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-panel disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span aria-hidden="true">→</span>
-            Evaluate Route
+            {isSubmitting ? "Evaluating…" : "Evaluate Route"}
           </button>
         </div>
       </form>

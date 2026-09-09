@@ -9,6 +9,9 @@ export type EnvironmentId = "CLOUD" | "ON_PREM" | "AIR_GAPPED";
 
 export type RoutingStatus = "ROUTED" | "BLOCKED";
 
+/** Outcome recorded in the audit trail; includes pre-routing quarantine holds. */
+export type WorkloadOutcome = RoutingStatus | "QUARANTINED";
+
 export type IncidentType =
   | "FIREWALL_LOG"
   | "AUTHENTICATION_LOG"
@@ -76,9 +79,40 @@ export interface AuditEntry {
   timestamp: string;
   incidentTitle: string;
   classification: Classification;
-  outcome: RoutingStatus;
+  outcome: WorkloadOutcome;
   selectedEnvironment: EnvironmentId | null;
   policyVersion: string;
+}
+
+/**
+ * Attributes the classification engine derives from raw incident content,
+ * independent of whatever classification the submitter declared.
+ */
+export interface ClassificationSignals {
+  containsPii: boolean;
+  containsInternalIps: boolean;
+  containsCredentials: boolean;
+  containsClassifiedMarkers: boolean;
+  requiresExternalNetwork: boolean;
+}
+
+export interface ClassificationResult extends ClassificationSignals {
+  detectedClassification: Classification;
+}
+
+/** Fields a SOC analyst supplies when submitting a new incident for evaluation. */
+export type IncidentSubmission = Omit<Incident, "id" | "submittedAt">;
+
+/**
+ * The complete server-side result of processing one incident submission:
+ * classification, policy routing (skipped when quarantined), and analysis.
+ */
+export interface WorkloadResult {
+  incident: Incident;
+  classification: ClassificationResult;
+  outcome: WorkloadOutcome;
+  decision: RoutingDecision | null;
+  analysis: IncidentAnalysis | null;
 }
 
 export interface IncidentAnalysis {

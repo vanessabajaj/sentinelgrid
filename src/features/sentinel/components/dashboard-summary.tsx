@@ -10,6 +10,7 @@ const METRICS = [
   { key: "onPrem", label: "On-Prem Routes", marker: "ONP" },
   { key: "airGap", label: "Air-Gapped Routes", marker: "AIR" },
   { key: "blocked", label: "Blocked Requests", marker: "!" },
+  { key: "quarantined", label: "Quarantined", marker: "⚑" },
 ] as const;
 
 export function DashboardSummary({ entries }: DashboardSummaryProps) {
@@ -25,6 +26,8 @@ export function DashboardSummary({ entries }: DashboardSummaryProps) {
       (entry) => entry.selectedEnvironment === "AIR_GAPPED",
     ).length,
     blocked: entries.filter((entry) => entry.outcome === "BLOCKED").length,
+    quarantined: entries.filter((entry) => entry.outcome === "QUARANTINED")
+      .length,
   };
 
   return (
@@ -56,7 +59,9 @@ export function DashboardSummary({ entries }: DashboardSummaryProps) {
               <p className="text-xs font-medium text-muted">{metric.label}</p>
               <span
                 className={`font-mono text-[10px] font-bold tracking-wider ${
-                  metric.key === "blocked" ? "text-warning" : "text-accent"
+                  metric.key === "blocked" || metric.key === "quarantined"
+                    ? "text-warning"
+                    : "text-accent"
                 }`}
                 aria-hidden="true"
               >

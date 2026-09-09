@@ -2,19 +2,10 @@ import {
   formatEnumLabel,
   formatTimestamp,
 } from "@/features/sentinel/components/display-utils";
-import type {
-  Incident,
-  IncidentAnalysis as Analysis,
-  RoutingDecision,
-  Severity,
-} from "@/features/sentinel/types";
+import type { Severity, WorkloadResult } from "@/features/sentinel/types";
 
 interface IncidentAnalysisProps {
-  result: {
-    incident: Incident;
-    decision: RoutingDecision;
-    analysis: Analysis | null;
-  } | null;
+  result: WorkloadResult | null;
 }
 
 const SEVERITY_STYLES: Record<Severity, string> = {
@@ -29,12 +20,16 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
     return null;
   }
 
-  const isBlocked = result.decision.status === "BLOCKED";
+  const isRouted = result.outcome === "ROUTED";
+  const notExecutedReason =
+    result.outcome === "QUARANTINED"
+      ? "Analysis not executed because the workload was quarantined for a classification conflict."
+      : "Analysis not executed because policy blocked the workload.";
 
   return (
     <section
       className={`overflow-hidden rounded-md border bg-panel ${
-        isBlocked ? "border-warning/45" : "border-border"
+        isRouted ? "border-border" : "border-warning/45"
       }`}
       aria-labelledby="analysis-heading"
       aria-live="polite"
@@ -56,7 +51,7 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
         </span>
       </div>
 
-      {isBlocked || !result.analysis ? (
+      {!isRouted || !result.analysis ? (
         <div className="p-5 sm:p-6">
           <div className="flex gap-4 rounded-md border border-warning/30 bg-warning/5 p-4">
             <span
@@ -70,7 +65,7 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
                 Analysis not executed
               </p>
               <p className="mt-1 text-sm leading-6 text-foreground">
-                Analysis not executed because policy blocked the workload.
+                {notExecutedReason}
               </p>
             </div>
           </div>

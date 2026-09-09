@@ -1,8 +1,9 @@
-import {
-  mockEnvironments,
-  mockIncidents,
-} from "@/data/mock-sentinel-data";
+import { mockIncidents } from "@/data/mock-sentinel-data";
 import { SentinelWorkspace } from "@/features/sentinel/components/sentinel-workspace";
+import {
+  getEnvironments,
+  listAuditEntries,
+} from "@/features/sentinel/server/sentinel-store";
 
 export default function Home() {
   return (
@@ -51,7 +52,8 @@ export default function Home() {
 
       <div className="mx-auto w-full max-w-[1500px] px-5 py-7 sm:px-8 lg:px-10 lg:py-9">
         <SentinelWorkspace
-          environments={mockEnvironments}
+          initialEnvironments={getEnvironments()}
+          initialAuditEntries={listAuditEntries()}
           demoIncidents={mockIncidents}
         />
       </div>
