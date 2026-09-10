@@ -1,13 +1,12 @@
 import type { ExecutionWorker } from "@/features/sentinel/workers/types";
 import { executeLocalWorker } from "@/features/sentinel/workers/execute-local-worker";
+import { getWorkerDescriptor } from "@/features/sentinel/workers/worker-config";
+
+const descriptor = getWorkerDescriptor("CLOUD");
 
 export const cloudWorker: ExecutionWorker = {
   environmentId: "CLOUD",
   execute(incident) {
-    return executeLocalWorker(incident, {
-      environmentId: "CLOUD",
-      executionMode: "EXTERNAL_CAPABLE",
-      workerName: "Sentinel Cloud Worker",
-    });
+    return executeLocalWorker(incident, descriptor);
   },
 };

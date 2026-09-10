@@ -1,9 +1,9 @@
-import { firstMatch } from "@/features/sentinel/analysis/extract-signal";
+import { firstMatch } from "./extract-signal";
 import type {
   AttackTimelineEvent,
   Incident,
   IncidentType,
-} from "@/features/sentinel/types";
+} from "../types";
 
 /**
  * Reconstructs a short chronological event sequence for an incident, so the

@@ -33,7 +33,7 @@ the same way and leaves an audit trail explaining why.
    job mislabeled PUBLIC) — an explicit tamper/misclassification check, not
    just "trust the label."
 4. **Dispatches and analyzes** routed incidents through an environment-specific
-   local worker: severity, suspected attack type, indicators, an attack
+   worker service: severity, suspected attack type, indicators, an attack
    timeline, and recommended actions.
 5. **Manages deployment** of the model artifact across all three
    environments, including simulating the air-gap transfer pipeline
@@ -47,13 +47,18 @@ Requires Node.js 20+.
 
 ```bash
 npm install
-npm run dev
+npm run dev:local
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Run the test suite (59 tests covering classification, routing, analysis,
-timelines, worker dispatch, the orchestrator, and Route Handlers):
+`dev:local` explicitly selects the in-process worker transport. It uses the
+same worker contracts and deterministic analysis as the service transport,
+but does not require Docker.
+
+Run the test suite (71 tests covering classification, routing, analysis,
+timelines, local and HTTP worker dispatch, worker service contracts, the
+orchestrator, and Route Handlers):
 
 ```bash
 npm test
@@ -63,7 +68,37 @@ Production build (also runs the TypeScript check):
 
 ```bash
 npm run build
-npm start
+SENTINEL_WORKER_MODE=local npm start
+```
+
+## Docker Compose
+
+Start the control plane and all three worker services:
+
+```bash
+docker compose up --build
+```
+
+The dashboard is available at [http://localhost:3000](http://localhost:3000).
+Cloud and On-Prem health endpoints are exposed for local inspection. The
+Air-Gapped endpoint is exposed only inside its internal Compose network:
+
+| Service | Host URL | Responsibility |
+|---|---|---|
+| Cloud Worker | `http://localhost:4101/health` | Public-compatible execution with `EXTERNAL_CAPABLE` mode |
+| On-Prem Worker | `http://localhost:4102/health` | Controlled-network execution with `CONTROLLED_NETWORK` mode |
+| Air-Gapped Worker | `http://airgap-worker:4103/health` (internal only) | Local-only deterministic execution with `OFFLINE` mode |
+
+Host ports can be changed with `SENTINELGRID_PORT`, `CLOUD_WORKER_PORT`, and
+`ONPREM_WORKER_PORT`; `AIRGAP_WORKER_PORT` changes the isolated worker's
+internal port. The control plane discovers workers through
+`CLOUD_WORKER_URL`, `ONPREM_WORKER_URL`, and `AIRGAP_WORKER_URL`; Compose
+supplies their internal service URLs.
+
+Stop and remove the prototype containers with:
+
+```bash
+docker compose down
 ```
 
 ## Demo walkthrough
@@ -93,23 +128,32 @@ its decision) and in the **Session audit log** at the bottom.
 ## Architecture
 
 ```
-Next.js dashboard (client components)
-        ↓ fetch
-Next.js Route Handlers  — src/app/api/*
-        ↓
-Classification engine   — src/features/sentinel/classification/
-        ↓
-Policy engine           — src/features/sentinel/routing/
-        ↓
-In-memory job store     — src/features/sentinel/server/sentinel-store.ts
-        ↓
-Worker dispatcher       — src/features/sentinel/workers/
-        ↓
-Environment workers     — Cloud / On-Prem / Air-Gapped (local simulation)
+Browser dashboard
+       │
+       ▼
+Next.js control plane :3000
+       │ classify → deterministic policy route → allocate capacity
+       │
+       ├── HTTP → Cloud Worker :4101
+       ├── HTTP → On-Prem Worker :4102
+       └── HTTP → Air-Gapped Worker :4103
+                    (isolated internal Docker network)
 
-The in-memory store owns environment capacity, workload history, the audit
-trail, and model artifact state.
+Each worker imports the same deterministic analysis and timeline modules.
+The in-memory control-plane store owns capacity, workload history, audit
+records, worker health observations, and model artifact state.
 ```
+
+`SENTINEL_WORKER_MODE=http` selects service dispatch and requires all three
+worker URL variables. `SENTINEL_WORKER_MODE=local` selects the in-process
+registry used by normal automated tests and optional local development. The
+mode is mandatory: a failed HTTP dispatch never falls back to local execution.
+
+Routing remains authoritative and deterministic. If a selected service is
+unreachable, times out, rejects the request, or returns a malformed payload,
+the workload remains routed to that selected environment but its execution is
+recorded as `FAILED`. Capacity is released in all cases, the failure is kept in
+workload history, and SentinelGrid does not attempt another environment.
 
 | Concern | Where |
 |---|---|
@@ -118,7 +162,8 @@ trail, and model artifact state.
 | Routing/eligibility evaluation | `src/features/sentinel/routing/evaluate-routing.ts` |
 | Incident analysis + attack timeline generation | `src/features/sentinel/analysis/` |
 | Orchestrator: capacity allocation/release, workload completion, quarantine, audit trail, model deployment state | `src/features/sentinel/server/sentinel-store.ts` |
-| Worker registry + environment-specific deterministic execution | `src/features/sentinel/workers/` |
+| Local/HTTP dispatch, worker registry, health checks, and response validation | `src/features/sentinel/workers/` |
+| Standalone worker HTTP service (`GET /health`, `POST /execute`) | `src/features/sentinel/worker-service/` |
 | API: `POST/GET /api/incidents`, `GET /api/environments`, `GET /api/audit`, `GET /api/deployment`, `POST /api/deployment/air-gap`, `POST /api/reset` | `src/app/api/` |
 | Dashboard UI | `src/features/sentinel/components/` |
 
@@ -136,10 +181,15 @@ layer*, not a production SOC platform:
 - **"AI analysis" (severity, attack type, indicators, timeline)** is
   template- and regex-driven against the synthetic sample content, not a
   live LLM call — deterministic and reproducible for demo purposes.
-- **The three environments are simulated in-process**, not three real
-  deployments. Their workers are local abstractions, and capacity,
-  online/offline state, and network mode are modeled data rather than real
-  infrastructure.
+- **The three environments remain simulated.** Docker mode runs their workers
+  as separate local containers; local/test mode runs equivalent in-process
+  adapters. Capacity, environment availability, and network capabilities are
+  still modeled prototype data rather than real infrastructure.
+- **The Air-Gapped worker is attached only to an internal Docker network**
+  shared with the control plane. This limits its normal Compose egress while
+  retaining the channel required for dispatch. This is a logical air-gap
+  simulation for the prototype, not a production-grade physical isolation
+  boundary.
 - **State is in-memory** and resets when the server restarts. A durable
   store (Postgres/SQLite) is the natural next step, not implemented here.
 - **The model artifact and its SHA256 are illustrative**, not a hash of

@@ -6,6 +6,14 @@ import {
 import { evaluateRouting } from "@/features/sentinel/routing/evaluate-routing";
 import { POLICY_VERSION } from "@/features/sentinel/routing/policy-config";
 import { dispatchIncident } from "@/features/sentinel/workers/dispatch-incident";
+import {
+  checkWorkerHealth,
+  WorkerDispatchError,
+} from "@/features/sentinel/workers/http-worker-client";
+import {
+  getWorkerDescriptor,
+  getWorkerDispatchMode,
+} from "@/features/sentinel/workers/worker-config";
 import type {
   AirGapDeploymentResult,
   AuditEntry,
@@ -15,6 +23,7 @@ import type {
   IncidentSubmission,
   ModelArtifact,
   WorkerExecutionMetadata,
+  WorkerExecutionFailure,
   WorkloadResult,
 } from "@/features/sentinel/types";
 
@@ -113,6 +122,44 @@ function getState(): SentinelStoreState {
 
 export function getEnvironments(): Environment[] {
   return getState().environments;
+}
+
+/** Refreshes informational worker health without changing routing availability. */
+export async function refreshWorkerHealth(): Promise<void> {
+  const environments = getState().environments;
+  let mode: ReturnType<typeof getWorkerDispatchMode>;
+
+  try {
+    mode = getWorkerDispatchMode();
+  } catch {
+    for (const environment of environments) {
+      environment.workerStatus = "UNKNOWN";
+    }
+    return;
+  }
+
+  if (mode === "local") {
+    for (const environment of environments) {
+      environment.workerStatus = "ONLINE";
+    }
+    return;
+  }
+
+  const statuses = await Promise.all(
+    environments.map(async (environment) => ({
+      environmentId: environment.id,
+      status: await checkWorkerHealth(environment.id),
+    })),
+  );
+
+  for (const { environmentId, status } of statuses) {
+    const environment = environments.find(
+      (candidate) => candidate.id === environmentId,
+    );
+    if (environment) {
+      environment.workerStatus = status;
+    }
+  }
 }
 
 export function listWorkloads(): WorkloadResult[] {
@@ -235,6 +282,7 @@ export async function submitIncident(
       outcome: "QUARANTINED",
       executionStatus: null,
       workerExecution: null,
+      executionFailure: null,
       decision: null,
       analysis: null,
     };
@@ -250,6 +298,7 @@ export async function submitIncident(
 
     let executionStatus: WorkloadResult["executionStatus"] = null;
     let workerExecution: WorkerExecutionMetadata | null = null;
+    let executionFailure: WorkerExecutionFailure | null = null;
     let analysis: WorkloadResult["analysis"] = null;
 
     if (decision.status === "ROUTED" && decision.selectedEnvironment) {
@@ -279,11 +328,31 @@ export async function submitIncident(
           executionMode: workerResult.executionMode,
           workerName: workerResult.workerName,
         };
+        environment.workerStatus = "ONLINE";
+        executionStatus = "COMPLETED";
+      } catch (error) {
+        const descriptor = getWorkerDescriptor(decision.selectedEnvironment);
+        const reason =
+          error instanceof Error
+            ? error.message
+            : `${descriptor.workerName} execution failed.`;
+
+        executionStatus = "FAILED";
+        executionFailure = {
+          environmentId: decision.selectedEnvironment,
+          workerName: descriptor.workerName,
+          reason: reason.startsWith(descriptor.workerName)
+            ? reason
+            : `${descriptor.workerName}: ${reason}`,
+          failedAt: new Date().toISOString(),
+        };
+        environment.workerStatus =
+          error instanceof WorkerDispatchError
+            ? error.workerStatus
+            : "UNKNOWN";
       } finally {
         releaseCapacity(environment, incident.estimatedWorkload);
       }
-
-      executionStatus = "COMPLETED";
     }
 
     result = {
@@ -292,6 +361,7 @@ export async function submitIncident(
       outcome: decision.status,
       executionStatus,
       workerExecution,
+      executionFailure,
       decision,
       analysis,
     };

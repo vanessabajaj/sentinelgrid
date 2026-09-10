@@ -1,0 +1,19 @@
+FROM node:22-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json tsconfig.json tsconfig.workers.json ./
+RUN npm ci
+
+COPY src ./src
+RUN npm run build:workers
+
+FROM node:22-alpine AS runtime
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=build /app/dist-workers ./dist-workers
+
+USER node
+
+CMD ["node", "dist-workers/features/sentinel/worker-service/server.js"]

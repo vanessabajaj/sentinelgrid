@@ -1,10 +1,10 @@
-import { firstMatch } from "@/features/sentinel/analysis/extract-signal";
-import { generateAttackTimeline } from "@/features/sentinel/analysis/generate-attack-timeline";
+import { firstMatch } from "./extract-signal";
+import { generateAttackTimeline } from "./generate-attack-timeline";
 import type {
   Incident,
   IncidentAnalysis,
   IncidentType,
-} from "@/features/sentinel/types";
+} from "../types";
 
 interface AnalysisTemplate {
   suspectedAttackType: string;

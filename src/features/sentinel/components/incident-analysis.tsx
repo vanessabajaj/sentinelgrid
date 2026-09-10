@@ -23,7 +23,9 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
 
   const isRouted = result.outcome === "ROUTED";
   const notExecutedReason =
-    result.outcome === "QUARANTINED"
+    result.executionFailure
+      ? result.executionFailure.reason
+      : result.outcome === "QUARANTINED"
       ? "Analysis not executed because the workload was quarantined for a classification conflict."
       : "Analysis not executed because policy blocked the workload.";
 
@@ -50,7 +52,9 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
         <span className="w-fit rounded border border-border bg-surface px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted">
           {result.workerExecution
             ? `Executed by: ${result.workerExecution.workerName}`
-            : "Simulated local analysis"}
+            : result.executionFailure
+              ? "Worker execution failed"
+              : "Analysis not dispatched"}
         </span>
       </div>
 

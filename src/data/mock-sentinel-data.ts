@@ -17,6 +17,7 @@ export const mockEnvironments = [
     capacity: 1_000,
     usedCapacity: 120,
     online: true,
+    workerStatus: "UNKNOWN",
     supportedIncidentTypes: ["CVE_ANALYSIS", "THREAT_INTELLIGENCE"],
   },
   {
@@ -27,6 +28,7 @@ export const mockEnvironments = [
     capacity: 100,
     usedCapacity: 58,
     online: true,
+    workerStatus: "UNKNOWN",
     supportedIncidentTypes: [
       "FIREWALL_LOG",
       "AUTHENTICATION_LOG",
@@ -42,6 +44,7 @@ export const mockEnvironments = [
     capacity: 30,
     usedCapacity: 12,
     online: true,
+    workerStatus: "UNKNOWN",
     supportedIncidentTypes: [
       "FIREWALL_LOG",
       "AUTHENTICATION_LOG",

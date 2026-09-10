@@ -12,7 +12,13 @@ export type RoutingStatus = "ROUTED" | "BLOCKED";
 /** Outcome recorded in the audit trail; includes pre-routing quarantine holds. */
 export type WorkloadOutcome = RoutingStatus | "QUARANTINED";
 
-export type WorkloadExecutionStatus = "QUEUED" | "RUNNING" | "COMPLETED";
+export type WorkloadExecutionStatus =
+  | "QUEUED"
+  | "RUNNING"
+  | "COMPLETED"
+  | "FAILED";
+
+export type WorkerHealthStatus = "ONLINE" | "OFFLINE" | "UNKNOWN";
 
 export type WorkerExecutionMode =
   | "EXTERNAL_CAPABLE"
@@ -54,6 +60,8 @@ export interface Environment {
   /** Normalized compute units currently allocated. */
   usedCapacity: number;
   online: boolean;
+  /** Informational service health; routing continues to use `online`. */
+  workerStatus: WorkerHealthStatus;
   supportedIncidentTypes: IncidentType[];
 }
 
@@ -122,6 +130,8 @@ export interface WorkloadResult {
   executionStatus: WorkloadExecutionStatus | null;
   /** Worker metadata for routed work; null when no worker was dispatched. */
   workerExecution: WorkerExecutionMetadata | null;
+  /** Sanitized execution failure details; null unless routed execution failed. */
+  executionFailure: WorkerExecutionFailure | null;
   decision: RoutingDecision | null;
   analysis: IncidentAnalysis | null;
 }
@@ -132,6 +142,20 @@ export interface WorkerExecutionMetadata {
   completedAt: string;
   executionMode: WorkerExecutionMode;
   workerName: string;
+}
+
+export interface WorkerExecutionFailure {
+  environmentId: EnvironmentId;
+  workerName: string;
+  reason: string;
+  failedAt: string;
+}
+
+export interface WorkerHealth {
+  workerName: string;
+  environmentId: EnvironmentId;
+  executionMode: WorkerExecutionMode;
+  status: "ONLINE";
 }
 
 /** One chronological event in a reconstructed attack timeline. */

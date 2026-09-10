@@ -108,15 +108,26 @@ export function RecentWorkloads({
                             workload.workerExecution.executionMode,
                           )}
                         </span>
+                      ) : workload.executionFailure ? (
+                        <span className="mt-1 block text-[10px] text-danger">
+                          {workload.executionFailure.workerName}
+                        </span>
                       ) : null}
                     </td>
                     <td className="px-5 py-4">
                       <span
-                        className={`font-mono text-[11px] font-bold ${OUTCOME_STYLES[workload.outcome]}`}
+                        className={`font-mono text-[11px] font-bold ${
+                          workload.executionStatus === "FAILED"
+                            ? "text-danger"
+                            : OUTCOME_STYLES[workload.outcome]
+                        }`}
                       >
-                        {workload.outcome}
+                        {workload.executionStatus === "FAILED"
+                          ? "FAILED"
+                          : workload.outcome}
                       </span>
-                      {workload.executionStatus ? (
+                      {workload.executionStatus &&
+                      workload.executionStatus !== "FAILED" ? (
                         <span className="ml-2 font-mono text-[10px] text-muted">
                           · {workload.executionStatus}
                         </span>

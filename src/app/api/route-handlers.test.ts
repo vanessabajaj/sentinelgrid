@@ -183,7 +183,7 @@ describe("SentinelGrid Route Handlers", () => {
 
     await submit(buildSubmission());
 
-    const response = getEnvironments();
+    const response = await getEnvironments();
     const payload = (await response.json()) as {
       environments: Environment[];
     };
@@ -193,6 +193,11 @@ describe("SentinelGrid Route Handlers", () => {
 
     expect(response.status).toBe(200);
     expect(payload.environments).toHaveLength(3);
+    expect(
+      payload.environments.every(
+        (environment) => environment.workerStatus === "ONLINE",
+      ),
+    ).toBe(true);
     expect(cloudAfter?.usedCapacity).toBe(cloudBefore?.usedCapacity);
   });
 

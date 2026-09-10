@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { getEnvironments } from "@/features/sentinel/server/sentinel-store";
+import {
+  getEnvironments,
+  refreshWorkerHealth,
+} from "@/features/sentinel/server/sentinel-store";
 
-export function GET() {
+export async function GET() {
+  await refreshWorkerHealth();
   return NextResponse.json({ environments: getEnvironments() });
 }

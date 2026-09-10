@@ -1,0 +1,97 @@
+services:
+  control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      SENTINEL_WORKER_MODE: http
+      CLOUD_WORKER_URL: http://cloud-worker:4101
+      ONPREM_WORKER_URL: http://onprem-worker:4102
+      AIRGAP_WORKER_URL: http://airgap-worker:${AIRGAP_WORKER_PORT:-4103}
+      WORKER_REQUEST_TIMEOUT_MS: ${WORKER_REQUEST_TIMEOUT_MS:-5000}
+    ports:
+      - "${SENTINELGRID_PORT:-3000}:3000"
+    depends_on:
+      cloud-worker:
+        condition: service_healthy
+      onprem-worker:
+        condition: service_healthy
+      airgap-worker:
+        condition: service_healthy
+    networks:
+      - worker-network
+      - airgap-internal
+
+  cloud-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      WORKER_ENVIRONMENT_ID: CLOUD
+      PORT: 4101
+    ports:
+      - "${CLOUD_WORKER_PORT:-4101}:4101"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4101/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    networks:
+      - worker-network
+
+  onprem-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      WORKER_ENVIRONMENT_ID: ON_PREM
+      PORT: 4102
+    ports:
+      - "${ONPREM_WORKER_PORT:-4102}:4102"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4102/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    networks:
+      - worker-network
+
+  airgap-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      WORKER_ENVIRONMENT_ID: AIR_GAPPED
+      PORT: ${AIRGAP_WORKER_PORT:-4103}
+    expose:
+      - "${AIRGAP_WORKER_PORT:-4103}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    networks:
+      - airgap-internal
+
+networks:
+  worker-network:
+  airgap-internal:
+    internal: true

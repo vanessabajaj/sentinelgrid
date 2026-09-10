@@ -29,6 +29,12 @@ export function EnvironmentCard({
     Math.max(0, (environment.usedCapacity / environment.capacity) * 100),
   );
   const firstFailure = evaluation?.checks.find((check) => !check.passed);
+  const workerStatusClass =
+    environment.workerStatus === "ONLINE"
+      ? "text-success"
+      : environment.workerStatus === "OFFLINE"
+        ? "text-danger"
+        : "text-muted";
 
   const status = isSelected
     ? "Selected"
@@ -107,6 +113,22 @@ export function EnvironmentCard({
               aria-hidden="true"
             />
             {environment.online ? "Online" : "Offline"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-muted">Worker service</dt>
+          <dd className={`mt-1 flex items-center gap-2 text-xs font-medium ${workerStatusClass}`}>
+            <span
+              className={`size-1.5 rounded-full ${
+                environment.workerStatus === "ONLINE"
+                  ? "bg-success"
+                  : environment.workerStatus === "OFFLINE"
+                    ? "bg-danger"
+                    : "bg-muted"
+              }`}
+              aria-hidden="true"
+            />
+            Worker {environment.workerStatus.toLowerCase()}
           </dd>
         </div>
         <div>

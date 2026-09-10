@@ -4,7 +4,7 @@ import type {
   Incident,
   IncidentAnalysis,
   WorkerExecutionMetadata,
-} from "@/features/sentinel/types";
+} from "../types";
 
 export interface WorkerExecutionResult extends WorkerExecutionMetadata {
   analysis: IncidentAnalysis;

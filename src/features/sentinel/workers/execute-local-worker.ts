@@ -1,10 +1,10 @@
-import { generateIncidentAnalysis } from "@/features/sentinel/analysis/generate-incident-analysis";
+import { generateIncidentAnalysis } from "../analysis/generate-incident-analysis";
 import type {
   EnvironmentId,
   Incident,
   WorkerExecutionMode,
-} from "@/features/sentinel/types";
-import type { WorkerExecutionResult } from "@/features/sentinel/workers/types";
+} from "../types";
+import type { WorkerExecutionResult } from "./types";
 
 interface LocalWorkerConfig {
   environmentId: EnvironmentId;

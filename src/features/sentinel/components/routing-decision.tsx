@@ -63,18 +63,23 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
   const { incident, decision, classification, outcome } = result;
   const isBlocked = outcome === "BLOCKED";
   const isQuarantined = outcome === "QUARANTINED";
+  const isFailed = result.executionStatus === "FAILED";
 
-  const badgeClass = isQuarantined
+  const badgeClass = isFailed
+    ? "border-danger/40 bg-danger/10 text-danger"
+    : isQuarantined
     ? "border-warning/40 bg-warning/10 text-warning"
     : isBlocked
       ? "border-danger/40 bg-danger/10 text-danger"
       : "border-success/40 bg-success/10 text-success";
-  const badgeIcon = isQuarantined ? "⚑" : isBlocked ? "!" : "✓";
+  const badgeIcon = isQuarantined ? "⚑" : isBlocked || isFailed ? "!" : "✓";
 
   return (
     <section
       className={`min-h-[360px] rounded-md border bg-panel ${
-        isQuarantined
+        isFailed
+          ? "border-danger/60"
+          : isQuarantined
           ? "border-warning/60"
           : isBlocked
             ? "border-danger/60"
@@ -99,7 +104,7 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
           className={`inline-flex w-fit items-center gap-2 rounded border px-3 py-1.5 font-mono text-xs font-bold tracking-wider ${badgeClass}`}
         >
           <span aria-hidden="true">{badgeIcon}</span>
-          {outcome}
+          {isFailed ? "EXECUTION FAILED" : outcome}
         </span>
       </div>
 
@@ -189,6 +194,23 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
                 </dd>
               </div>
             </dl>
+          </div>
+        ) : null}
+
+        {result.executionFailure ? (
+          <div className="mt-5 rounded-md border border-danger/30 bg-danger/5 p-4">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-danger">
+              Worker execution failed
+            </p>
+            <p className="mt-2 text-sm font-semibold text-white">
+              {result.executionFailure.workerName}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-foreground">
+              {result.executionFailure.reason}
+            </p>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted">
+              {formatTimestamp(result.executionFailure.failedAt)}
+            </p>
           </div>
         ) : null}
 

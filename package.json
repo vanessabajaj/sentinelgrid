@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "SENTINEL_WORKER_MODE=local next dev",
     "build": "next build",
+    "build:workers": "tsc --project tsconfig.workers.json",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run"

@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": "./src",
+    "outDir": "./dist-workers",
+    "noEmit": false,
+    "incremental": false,
+    "isolatedModules": false
+  },
+  "include": [
+    "src/features/sentinel/types.ts",
+    "src/features/sentinel/analysis/extract-signal.ts",
+    "src/features/sentinel/analysis/generate-attack-timeline.ts",
+    "src/features/sentinel/analysis/generate-incident-analysis.ts",
+    "src/features/sentinel/workers/types.ts",
+    "src/features/sentinel/workers/execute-local-worker.ts",
+    "src/features/sentinel/workers/worker-config.ts",
+    "src/features/sentinel/workers/worker-contracts.ts",
+    "src/features/sentinel/worker-service/*.ts"
+  ],
+  "exclude": ["**/*.test.ts"]
+}

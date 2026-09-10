@@ -165,13 +165,20 @@ describe("worker orchestration", () => {
       new Error("Synthetic worker failure"),
     );
 
-    await expect(
-      submitIncident(toSubmission(getDemoIncident("INC-DEMO-002"))),
-    ).rejects.toThrow("Synthetic worker failure");
+    const result = await submitIncident(
+      toSubmission(getDemoIncident("INC-DEMO-002")),
+    );
 
     const after = getEnvironments().find(
       (environment) => environment.id === "ON_PREM",
     )?.usedCapacity;
+    expect(result.executionStatus).toBe("FAILED");
+    expect(result.workerExecution).toBeNull();
+    expect(result.executionFailure).toMatchObject({
+      environmentId: "ON_PREM",
+      workerName: "Sentinel On-Prem Worker",
+      reason: "Sentinel On-Prem Worker: Synthetic worker failure",
+    });
     expect(after).toBe(before);
   });
 
