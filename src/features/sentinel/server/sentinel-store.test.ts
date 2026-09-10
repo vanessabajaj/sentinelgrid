@@ -36,6 +36,7 @@ describe("sentinel-store", () => {
     const result = submitIncident(buildSubmission());
 
     expect(result.outcome).toBe("ROUTED");
+    expect(result.executionStatus).toBe("COMPLETED");
     expect(result.decision?.selectedEnvironment).not.toBeNull();
     expect(result.analysis).not.toBeNull();
 
@@ -49,13 +50,13 @@ describe("sentinel-store", () => {
     expect(listWorkloads()).toHaveLength(1);
   });
 
-  it("allocates capacity on the selected environment", () => {
+  it("releases selected-environment capacity when execution completes", () => {
     const before = getEnvironments().find(
       (environment) => environment.id === "ON_PREM",
     );
     const beforeUsed = before?.usedCapacity ?? 0;
 
-    submitIncident(
+    const result = submitIncident(
       buildSubmission({
         incidentType: "AUTHENTICATION_LOG",
         classification: "CONFIDENTIAL",
@@ -69,7 +70,10 @@ describe("sentinel-store", () => {
       (environment) => environment.id === "ON_PREM",
     );
 
-    expect(after?.usedCapacity).toBe(beforeUsed + 15);
+    expect(result.executionStatus).toBe("COMPLETED");
+    expect(after?.usedCapacity).toBe(beforeUsed);
+    expect(after?.usedCapacity).toBeGreaterThanOrEqual(0);
+    expect(after?.usedCapacity).toBeLessThanOrEqual(after?.capacity ?? 0);
   });
 
   it("quarantines a submission whose declared classification undersells detected content", () => {
@@ -82,6 +86,7 @@ describe("sentinel-store", () => {
     );
 
     expect(result.outcome).toBe("QUARANTINED");
+    expect(result.executionStatus).toBeNull();
     expect(result.decision).toBeNull();
     expect(result.analysis).toBeNull();
     expect(result.classification.detectedClassification).toBe("SECRET");
@@ -100,6 +105,7 @@ describe("sentinel-store", () => {
     );
 
     expect(result.outcome).toBe("BLOCKED");
+    expect(result.executionStatus).toBeNull();
     expect(result.decision?.selectedEnvironment).toBeNull();
     expect(result.analysis).toBeNull();
   });
@@ -113,6 +119,7 @@ describe("sentinel-store", () => {
       (deployment) => deployment.environmentId === "CLOUD",
     );
 
+    expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(airGap?.status).toBe("UPDATE_PENDING");
     expect(airGap?.version).not.toBe(artifact.latestVersion);
     expect(cloud?.status).toBe("ACTIVE");

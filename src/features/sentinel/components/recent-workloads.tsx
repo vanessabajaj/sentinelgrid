@@ -102,6 +102,11 @@ export function RecentWorkloads({
                       >
                         {workload.outcome}
                       </span>
+                      {workload.executionStatus ? (
+                        <span className="ml-2 font-mono text-[10px] text-muted">
+                          · {workload.executionStatus}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="whitespace-nowrap px-5 py-4 font-mono text-[11px] text-muted">
                       {formatTimestamp(workload.incident.submittedAt)}

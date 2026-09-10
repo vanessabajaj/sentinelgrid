@@ -51,8 +51,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Run the test suite (36 tests covering classification, routing, analysis,
-timelines, and the orchestrator):
+Run the test suite (43 tests covering classification, routing, analysis,
+timelines, the orchestrator, and Route Handlers):
 
 ```bash
 npm test
@@ -112,7 +112,7 @@ In-memory job store     — src/features/sentinel/server/sentinel-store.ts
 | Policy config (classification → allowed environments, network-mode ranking) | `src/features/sentinel/routing/policy-config.ts` |
 | Routing/eligibility evaluation | `src/features/sentinel/routing/evaluate-routing.ts` |
 | Incident analysis + attack timeline generation | `src/features/sentinel/analysis/` |
-| Orchestrator: capacity allocation, quarantine, audit trail, model deployment state | `src/features/sentinel/server/sentinel-store.ts` |
+| Orchestrator: capacity allocation/release, workload completion, quarantine, audit trail, model deployment state | `src/features/sentinel/server/sentinel-store.ts` |
 | API: `POST/GET /api/incidents`, `GET /api/environments`, `GET /api/audit`, `GET /api/deployment`, `POST /api/deployment/air-gap`, `POST /api/reset` | `src/app/api/` |
 | Dashboard UI | `src/features/sentinel/components/` |
 

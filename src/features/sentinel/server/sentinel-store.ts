@@ -25,7 +25,8 @@ import type {
 const MODEL_NAME = "SentinelAI";
 const MODEL_LATEST_VERSION = "2.4.1";
 const MODEL_SHA256 =
-  "91a7f3c2b8e4d16a5f0c9b3e7d2a1f4c6b8e0d3a5f7c9b1e3d5a7f9c1b3e5d20bf";
+  // Synthetic, SHA-256-shaped demo value. No real artifact is verified yet.
+  "91a7f3c2b8e4d16a5f0c9b3e7d2a1f4c6b8e0d3a5f7c9b1e3d5a7f9c1b3e20bf";
 
 const AIR_GAP_PIPELINE_STEPS = [
   "Signed artifact staged",
@@ -179,12 +180,28 @@ function toAuditEntry(result: WorkloadResult): AuditEntry {
   };
 }
 
+function allocateCapacity(environment: Environment, units: number): void {
+  const nextUsedCapacity = environment.usedCapacity + units;
+
+  if (nextUsedCapacity > environment.capacity) {
+    throw new Error(
+      `${environment.displayName} cannot allocate ${units} capacity units.`,
+    );
+  }
+
+  environment.usedCapacity = Math.min(environment.capacity, nextUsedCapacity);
+}
+
+function releaseCapacity(environment: Environment, units: number): void {
+  environment.usedCapacity = Math.max(0, environment.usedCapacity - units);
+}
+
 /**
  * Processes one incident submission end to end: classify, check for a
  * declared-vs-detected classification conflict (quarantining if found),
- * evaluate routing against live environment capacity, allocate capacity for
- * a routed job, and generate an analysis. Every outcome is recorded to the
- * audit trail.
+ * evaluate routing against live environment capacity, run a routed job through
+ * its deterministic execution lifecycle, release its capacity on completion,
+ * and generate an analysis. Every outcome is recorded to the audit trail.
  */
 export function submitIncident(submission: IncidentSubmission): WorkloadResult {
   const state = getState();
@@ -212,6 +229,7 @@ export function submitIncident(submission: IncidentSubmission): WorkloadResult {
       incident,
       classification,
       outcome: "QUARANTINED",
+      executionStatus: null,
       decision: null,
       analysis: null,
     };
@@ -225,25 +243,38 @@ export function submitIncident(submission: IncidentSubmission): WorkloadResult {
 
     const decision = evaluateRouting(effectiveIncident, state.environments);
 
+    let executionStatus: WorkloadResult["executionStatus"] = null;
+    let analysis: WorkloadResult["analysis"] = null;
+
     if (decision.status === "ROUTED" && decision.selectedEnvironment) {
       const environment = state.environments.find(
         (candidate) => candidate.id === decision.selectedEnvironment,
       );
 
-      if (environment) {
-        environment.usedCapacity += incident.estimatedWorkload;
+      if (!environment) {
+        throw new Error("Selected environment was not present in the store.");
       }
+
+      executionStatus = "QUEUED";
+      allocateCapacity(environment, incident.estimatedWorkload);
+      executionStatus = "RUNNING";
+
+      try {
+        analysis = generateIncidentAnalysis(incident);
+      } finally {
+        releaseCapacity(environment, incident.estimatedWorkload);
+      }
+
+      executionStatus = "COMPLETED";
     }
 
     result = {
       incident,
       classification,
       outcome: decision.status,
+      executionStatus,
       decision,
-      analysis:
-        decision.status === "ROUTED"
-          ? generateIncidentAnalysis(incident)
-          : null,
+      analysis,
     };
   }
 

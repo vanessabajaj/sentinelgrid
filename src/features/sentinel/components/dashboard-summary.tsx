@@ -45,7 +45,7 @@ export function DashboardSummary({ entries }: DashboardSummaryProps) {
           </h2>
         </div>
         <p className="hidden text-xs text-muted sm:block">
-          In-memory metrics · resets on refresh
+          In-memory runtime metrics · resets with the server
         </p>
       </div>
 

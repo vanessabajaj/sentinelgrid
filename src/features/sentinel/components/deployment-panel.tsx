@@ -38,8 +38,14 @@ export function DeploymentPanel() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/deployment")
-      .then((response) => response.json())
+    fetch("/api/deployment", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Deployment status request failed.");
+        }
+
+        return response.json();
+      })
       .then((payload: { artifact: ModelArtifact }) => {
         if (!cancelled) {
           setArtifact(payload.artifact);

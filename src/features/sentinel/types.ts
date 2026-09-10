@@ -12,6 +12,8 @@ export type RoutingStatus = "ROUTED" | "BLOCKED";
 /** Outcome recorded in the audit trail; includes pre-routing quarantine holds. */
 export type WorkloadOutcome = RoutingStatus | "QUARANTINED";
 
+export type WorkloadExecutionStatus = "QUEUED" | "RUNNING" | "COMPLETED";
+
 export type IncidentType =
   | "FIREWALL_LOG"
   | "AUTHENTICATION_LOG"
@@ -111,6 +113,8 @@ export interface WorkloadResult {
   incident: Incident;
   classification: ClassificationResult;
   outcome: WorkloadOutcome;
+  /** Execution lifecycle for routed work; null when policy prevents execution. */
+  executionStatus: WorkloadExecutionStatus | null;
   decision: RoutingDecision | null;
   analysis: IncidentAnalysis | null;
 }

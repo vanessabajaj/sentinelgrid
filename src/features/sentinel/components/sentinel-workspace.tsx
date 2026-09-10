@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 
 import { AuditLog } from "@/features/sentinel/components/audit-log";
 import { DashboardSummary } from "@/features/sentinel/components/dashboard-summary";
@@ -20,9 +20,6 @@ import type {
 } from "@/features/sentinel/types";
 
 interface SentinelWorkspaceProps {
-  initialEnvironments: Environment[];
-  initialAuditEntries: AuditEntry[];
-  initialWorkloads: WorkloadResult[];
   demoIncidents: Incident[];
 }
 
@@ -31,11 +28,19 @@ interface WorkspaceState {
   latestResult: WorkloadResult | null;
   auditEntries: AuditEntry[];
   workloads: WorkloadResult[];
+  isHydrating: boolean;
   isSubmitting: boolean;
   error: string | null;
 }
 
 type WorkspaceAction =
+  | {
+      type: "hydration-completed";
+      environments: Environment[];
+      auditEntries: AuditEntry[];
+      workloads: WorkloadResult[];
+    }
+  | { type: "hydration-failed" }
   | { type: "submission-started" }
   | { type: "submission-failed"; message: string }
   | {
@@ -62,6 +67,21 @@ function workspaceReducer(
   action: WorkspaceAction,
 ): WorkspaceState {
   switch (action.type) {
+    case "hydration-completed":
+      return {
+        ...state,
+        environments: action.environments,
+        auditEntries: action.auditEntries,
+        workloads: action.workloads,
+        latestResult: action.workloads[0] ?? null,
+        isHydrating: false,
+      };
+    case "hydration-failed":
+      return {
+        ...state,
+        isHydrating: false,
+        error: "Could not refresh the current in-memory control-plane state.",
+      };
     case "submission-started":
       return { ...state, isSubmitting: true, error: null };
     case "submission-failed":
@@ -84,19 +104,79 @@ function workspaceReducer(
 }
 
 export function SentinelWorkspace({
-  initialEnvironments,
-  initialAuditEntries,
-  initialWorkloads,
   demoIncidents,
 }: SentinelWorkspaceProps) {
   const [state, dispatch] = useReducer(workspaceReducer, {
-    environments: initialEnvironments,
+    environments: [],
     latestResult: null,
-    auditEntries: initialAuditEntries,
-    workloads: initialWorkloads,
+    auditEntries: [],
+    workloads: [],
+    isHydrating: true,
     isSubmitting: false,
     error: null,
   });
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function hydrateRuntimeState() {
+      try {
+        const [incidentsResponse, environmentsResponse, auditResponse] =
+          await Promise.all([
+            fetch("/api/incidents", {
+              cache: "no-store",
+              signal: controller.signal,
+            }),
+            fetch("/api/environments", {
+              cache: "no-store",
+              signal: controller.signal,
+            }),
+            fetch("/api/audit", {
+              cache: "no-store",
+              signal: controller.signal,
+            }),
+          ]);
+
+        if (
+          !incidentsResponse.ok ||
+          !environmentsResponse.ok ||
+          !auditResponse.ok
+        ) {
+          throw new Error("Runtime state request failed.");
+        }
+
+        const [incidentsPayload, environmentsPayload, auditPayload] =
+          await Promise.all([
+            incidentsResponse.json() as Promise<{
+              workloads: WorkloadResult[];
+            }>,
+            environmentsResponse.json() as Promise<{
+              environments: Environment[];
+            }>,
+            auditResponse.json() as Promise<{ entries: AuditEntry[] }>,
+          ]);
+
+        dispatch({
+          type: "hydration-completed",
+          environments: environmentsPayload.environments,
+          auditEntries: auditPayload.entries,
+          workloads: incidentsPayload.workloads,
+        });
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        dispatch({ type: "hydration-failed" });
+      }
+    }
+
+    void hydrateRuntimeState();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   const handleSelectWorkload = useCallback((workload: WorkloadResult) => {
     dispatch({ type: "workload-selected", workload });
@@ -135,6 +215,23 @@ export function SentinelWorkspace({
       });
     }
   }, []);
+
+  if (state.isHydrating) {
+    return (
+      <section
+        className="rounded-md border border-border bg-panel px-6 py-14 text-center"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
+          Runtime synchronization
+        </p>
+        <p className="mt-3 text-sm font-medium text-white">
+          Loading current in-memory control-plane state…
+        </p>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-8">
