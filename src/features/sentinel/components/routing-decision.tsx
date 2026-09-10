@@ -3,14 +3,23 @@ import {
   formatEnumLabel,
   formatTimestamp,
 } from "@/features/sentinel/components/display-utils";
+import { POLICY_VERSION } from "@/features/sentinel/routing/policy-config";
 import type {
-  Incident,
-  RoutingDecision as Decision,
+  ClassificationSignals,
+  WorkloadResult,
 } from "@/features/sentinel/types";
 
 interface RoutingDecisionProps {
-  result: { incident: Incident; decision: Decision } | null;
+  result: WorkloadResult | null;
 }
+
+const SIGNAL_LABELS: Record<keyof ClassificationSignals, string> = {
+  containsPii: "Contains PII",
+  containsInternalIps: "Contains internal IPs",
+  containsCredentials: "Contains credentials",
+  containsClassifiedMarkers: "Contains classified markers",
+  requiresExternalNetwork: "Requires external network",
+};
 
 export function RoutingDecision({ result }: RoutingDecisionProps) {
   if (!result) {
@@ -51,13 +60,25 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
     );
   }
 
-  const { incident, decision } = result;
-  const isBlocked = decision.status === "BLOCKED";
+  const { incident, decision, classification, outcome } = result;
+  const isBlocked = outcome === "BLOCKED";
+  const isQuarantined = outcome === "QUARANTINED";
+
+  const badgeClass = isQuarantined
+    ? "border-warning/40 bg-warning/10 text-warning"
+    : isBlocked
+      ? "border-danger/40 bg-danger/10 text-danger"
+      : "border-success/40 bg-success/10 text-success";
+  const badgeIcon = isQuarantined ? "⚑" : isBlocked ? "!" : "✓";
 
   return (
     <section
       className={`min-h-[360px] rounded-md border bg-panel ${
-        isBlocked ? "border-danger/60" : "border-accent/50"
+        isQuarantined
+          ? "border-warning/60"
+          : isBlocked
+            ? "border-danger/60"
+            : "border-accent/50"
       }`}
       aria-labelledby="decision-heading"
       aria-live="polite"
@@ -75,19 +96,24 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
           </h2>
         </div>
         <span
-          className={`inline-flex w-fit items-center gap-2 rounded border px-3 py-1.5 font-mono text-xs font-bold tracking-wider ${
-            isBlocked
-              ? "border-danger/40 bg-danger/10 text-danger"
-              : "border-success/40 bg-success/10 text-success"
-          }`}
+          className={`inline-flex w-fit items-center gap-2 rounded border px-3 py-1.5 font-mono text-xs font-bold tracking-wider ${badgeClass}`}
         >
-          <span aria-hidden="true">{isBlocked ? "!" : "✓"}</span>
-          {decision.status}
+          <span aria-hidden="true">{badgeIcon}</span>
+          {outcome}
         </span>
       </div>
 
       <div className="p-5 sm:p-6">
-        {isBlocked ? (
+        {isQuarantined ? (
+          <div className="rounded-md border border-warning/25 bg-warning/5 p-4">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-warning">
+              Classification conflict
+            </p>
+            <p className="mt-2 text-xl font-semibold text-white">
+              Job quarantined for review
+            </p>
+          </div>
+        ) : isBlocked ? (
           <div className="rounded-md border border-danger/25 bg-danger/5 p-4">
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-danger">
               Policy enforced
@@ -102,7 +128,7 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
               Selected environment
             </p>
             <p className="mt-2 text-xl font-semibold text-white">
-              {decision.selectedEnvironment
+              {decision?.selectedEnvironment
                 ? formatEnvironmentLabel(decision.selectedEnvironment)
                 : "Unavailable"}
             </p>
@@ -117,7 +143,7 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-muted">Classification</dt>
+            <dt className="text-xs text-muted">Declared classification</dt>
             <dd className="mt-1 font-mono text-xs font-semibold text-foreground">
               {formatEnumLabel(incident.classification)}
             </dd>
@@ -131,17 +157,59 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
           <div>
             <dt className="text-xs text-muted">Policy version</dt>
             <dd className="mt-1 font-mono text-xs font-semibold text-foreground">
-              {decision.policyVersion}
+              {decision?.policyVersion ?? POLICY_VERSION}
             </dd>
           </div>
         </dl>
 
         <div className="mt-5 border-t border-border pt-5">
-          <p className="text-sm leading-6 text-foreground">
-            {decision.explanation}
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted">
+            Data classifier
           </p>
+          <p className="mt-2 text-sm leading-6 text-foreground">
+            Detected classification:{" "}
+            <span className="font-mono font-semibold text-white">
+              {formatEnumLabel(classification.detectedClassification)}
+            </span>
+          </p>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {(Object.keys(SIGNAL_LABELS) as (keyof ClassificationSignals)[])
+              .filter((key) => classification[key])
+              .map((key) => (
+                <li
+                  key={key}
+                  className="rounded border border-border bg-surface px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-foreground"
+                >
+                  {SIGNAL_LABELS[key]}
+                </li>
+              ))}
+            {(Object.keys(SIGNAL_LABELS) as (keyof ClassificationSignals)[]).every(
+              (key) => !classification[key],
+            ) ? (
+              <li className="rounded border border-border bg-surface px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted">
+                No sensitive signals detected
+              </li>
+            ) : null}
+          </ul>
+        </div>
+
+        <div className="mt-5 border-t border-border pt-5">
+          {isQuarantined ? (
+            <p className="text-sm leading-6 text-foreground">
+              Declared classification (
+              {formatEnumLabel(incident.classification)}) is lower than the
+              classification detected from the submitted content (
+              {formatEnumLabel(classification.detectedClassification)}). The
+              workload was held for manual review instead of being routed.
+            </p>
+          ) : (
+            <p className="text-sm leading-6 text-foreground">
+              {decision?.explanation}
+            </p>
+          )}
           <p className="mt-3 font-mono text-[10px] uppercase tracking-wider text-muted">
-            Evaluated {formatTimestamp(decision.evaluatedAt)}
+            Evaluated{" "}
+            {formatTimestamp(decision?.evaluatedAt ?? incident.submittedAt)}
           </p>
         </div>
       </div>

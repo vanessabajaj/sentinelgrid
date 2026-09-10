@@ -23,3 +23,12 @@ export function formatTimestamp(value: string): string {
     timeStyle: "medium",
   }).format(new Date(value));
 }
+
+/** Renders just the clock time (e.g. "09:42"), for compact timeline views. */
+export function formatClockTime(value: string): string {
+  return new Intl.DateTimeFormat("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}

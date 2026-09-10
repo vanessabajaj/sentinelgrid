@@ -78,7 +78,9 @@ export function AuditLog({ entries }: AuditLogProps) {
                       className={`font-mono text-[11px] font-bold ${
                         entry.outcome === "BLOCKED"
                           ? "text-danger"
-                          : "text-success"
+                          : entry.outcome === "QUARANTINED"
+                            ? "text-warning"
+                            : "text-success"
                       }`}
                     >
                       {entry.outcome}
@@ -87,7 +89,7 @@ export function AuditLog({ entries }: AuditLogProps) {
                   <td className="px-5 py-4 font-medium text-foreground">
                     {entry.selectedEnvironment
                       ? formatEnvironmentLabel(entry.selectedEnvironment)
-                      : "BLOCKED"}
+                      : entry.outcome}
                   </td>
                   <td className="whitespace-nowrap px-5 py-4 font-mono text-[11px] text-muted">
                     {entry.policyVersion}
