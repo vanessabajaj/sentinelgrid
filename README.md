@@ -37,8 +37,8 @@ the same way and leaves an audit trail explaining why.
    timeline, and recommended actions.
 5. **Manages deployment** of the model artifact across all three
    environments, including simulating the air-gap transfer pipeline
-   (signed artifact → security verification → manual transfer → air-gap
-   import → checksum verification → deployment).
+   (artifact preparation → SHA-256 computation → transfer package → air-gap
+   import → SHA-256 recomputation → checksum match → verified deployment).
 6. **Logs every decision** to an audit trail with its justification.
 
 ## Getting started
@@ -56,9 +56,9 @@ Open [http://localhost:3000](http://localhost:3000).
 same worker contracts and deterministic analysis as the service transport,
 but does not require Docker.
 
-Run the test suite (71 tests covering classification, routing, analysis,
+Run the test suite (79 tests covering classification, routing, analysis,
 timelines, local and HTTP worker dispatch, worker service contracts, the
-orchestrator, and Route Handlers):
+orchestrator, real artifact verification, and Route Handlers):
 
 ```bash
 npm test
@@ -125,6 +125,26 @@ through the full transfer pipeline.
 Every submission appears in **Recent workloads** (click a row to reopen
 its decision) and in the **Session audit log** at the bottom.
 
+## SentinelAI artifact lifecycle
+
+The prototype model artifact is a real local metadata file at
+`artifacts/sentinel-ai-1.0.0.json`. It contains deterministic, non-sensitive
+metadata only—there are no model weights, binaries, credentials, or API keys.
+
+The control plane reads the actual file bytes and computes SHA-256 with
+Node.js `crypto`; the checksum is not hardcoded in application logic. The
+deployment panel shows the computed checksum, byte size, source verification,
+and verification status for each environment.
+
+Air-Gap transfer remains simulated. During deployment SentinelGrid copies the
+source bytes into an imported representation, independently recomputes its
+SHA-256, and activates version 1.0.0 only when the source and imported hashes
+match. A mismatch leaves the previous Air-Gapped version and activation time
+unchanged, marks verification failed, and stops before deployment verification.
+
+Cryptographic signing and trust-chain verification are not implemented yet;
+this is still a prototype artifact lifecycle based on checksum integrity.
+
 ## Architecture
 
 ```
@@ -161,6 +181,7 @@ workload history, and SentinelGrid does not attempt another environment.
 | Policy config (classification → allowed environments, network-mode ranking) | `src/features/sentinel/routing/policy-config.ts` |
 | Routing/eligibility evaluation | `src/features/sentinel/routing/evaluate-routing.ts` |
 | Incident analysis + attack timeline generation | `src/features/sentinel/analysis/` |
+| Artifact loading, byte hashing, manifests, and checksum verification | `src/features/sentinel/artifacts/artifact-service.ts` |
 | Orchestrator: capacity allocation/release, workload completion, quarantine, audit trail, model deployment state | `src/features/sentinel/server/sentinel-store.ts` |
 | Local/HTTP dispatch, worker registry, health checks, and response validation | `src/features/sentinel/workers/` |
 | Standalone worker HTTP service (`GET /health`, `POST /execute`) | `src/features/sentinel/worker-service/` |
@@ -192,8 +213,10 @@ layer*, not a production SOC platform:
   boundary.
 - **State is in-memory** and resets when the server restarts. A durable
   store (Postgres/SQLite) is the natural next step, not implemented here.
-- **The model artifact and its SHA256 are illustrative**, not a hash of
-  any real build output.
+- **The model artifact is real metadata, but not a real model package.** Its
+  SHA-256 is computed and verified from the actual local bytes. Transfer is
+  simulated, and no cryptographic signing infrastructure or external registry
+  exists yet.
 
 All incident data, IP addresses, and hostnames used in fixtures and demo
 scenarios are synthetic.

@@ -179,23 +179,46 @@ export interface IncidentAnalysis {
 
 export type DeploymentStatus = "ACTIVE" | "UPDATE_PENDING" | "DEPLOYING";
 
+export type ArtifactVerificationStatus = "VERIFIED" | "PENDING" | "FAILED";
+
+export interface ArtifactMetadata {
+  modelName: string;
+  version: string;
+  engine: string;
+  supportedIncidentTypes: IncidentType[];
+  analysisSchemaVersion: string;
+  createdFor: string;
+}
+
+export interface ArtifactManifest {
+  metadata: ArtifactMetadata;
+  sha256: string;
+  sizeBytes: number;
+  verified: boolean;
+}
+
 /** The version of the model artifact deployed to one environment. */
 export interface ModelDeployment {
   environmentId: EnvironmentId;
   version: string;
   status: DeploymentStatus;
   deployedAt: string;
+  artifactSha256: string | null;
+  artifactSizeBytes: number | null;
+  verificationStatus: ArtifactVerificationStatus;
 }
 
 /**
- * One signed model artifact and where each environment stands relative to
- * its latest version. Demonstrates "the same artifact deployed everywhere"
- * across trust boundaries, including the air-gapped one-way transfer.
+ * One checksummed model artifact and where each environment stands relative
+ * to its latest version, including the simulated air-gapped transfer.
  */
 export interface ModelArtifact {
   name: string;
   latestVersion: string;
   sha256: string;
+  sizeBytes: number;
+  verified: boolean;
+  metadata: ArtifactMetadata;
   deployments: ModelDeployment[];
 }
 
@@ -203,9 +226,14 @@ export interface ModelArtifact {
 export interface DeploymentPipelineStep {
   name: string;
   completedAt: string;
+  status: "COMPLETED" | "FAILED";
 }
 
 export interface AirGapDeploymentResult {
   artifact: ModelArtifact;
   steps: DeploymentPipelineStep[];
+  verificationPassed: boolean;
+  sourceSha256: string;
+  importedSha256: string;
+  failureReason: string | null;
 }

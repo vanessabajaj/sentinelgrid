@@ -1,5 +1,10 @@
 import { mockEnvironments } from "@/data/mock-sentinel-data";
 import {
+  getArtifactManifest,
+  readArtifactBytes,
+  verifyImportedArtifact,
+} from "@/features/sentinel/artifacts/artifact-service";
+import {
   classifyContent,
   hasClassificationConflict,
 } from "@/features/sentinel/classification/classify-content";
@@ -27,24 +32,12 @@ import type {
   WorkloadResult,
 } from "@/features/sentinel/types";
 
-/**
- * Synthetic demo artifact. The SHA256 below is illustrative, not a hash of
- * any real build output — it exists to show "one signed artifact, deployed
- * consistently everywhere" in the deployment management view.
- */
-const MODEL_NAME = "SentinelAI";
-const MODEL_LATEST_VERSION = "2.4.1";
-const MODEL_SHA256 =
-  // Synthetic, SHA-256-shaped demo value. No real artifact is verified yet.
-  "91a7f3c2b8e4d16a5f0c9b3e7d2a1f4c6b8e0d3a5f7c9b1e3d5a7f9c1b3e20bf";
-
 const AIR_GAP_PIPELINE_STEPS = [
-  "Signed artifact staged",
-  "Security verification",
-  "Manual transfer",
-  "Air-gap import",
-  "Checksum verification",
-  "Deployment",
+  "Artifact Prepared",
+  "SHA-256 Computed",
+  "Transfer Package Prepared",
+  "Air-Gap Import",
+  "SHA-256 Recomputed",
 ] as const;
 
 /**
@@ -68,6 +61,8 @@ interface SentinelStoreState {
 const BASELINE_DEPLOYED_AT = "2026-09-01T00:00:00.000Z";
 
 function createInitialState(): SentinelStoreState {
+  const manifest = getArtifactManifest();
+
   return {
     environments: mockEnvironments.map((environment) => ({
       ...environment,
@@ -76,29 +71,41 @@ function createInitialState(): SentinelStoreState {
     workloads: [],
     auditEntries: [],
     modelArtifact: {
-      name: MODEL_NAME,
-      latestVersion: MODEL_LATEST_VERSION,
-      sha256: MODEL_SHA256,
+      name: manifest.metadata.modelName,
+      latestVersion: manifest.metadata.version,
+      sha256: manifest.sha256,
+      sizeBytes: manifest.sizeBytes,
+      verified: manifest.verified,
+      metadata: manifest.metadata,
       deployments: [
         {
           environmentId: "CLOUD",
-          version: MODEL_LATEST_VERSION,
+          version: manifest.metadata.version,
           status: "ACTIVE",
           deployedAt: BASELINE_DEPLOYED_AT,
+          artifactSha256: manifest.sha256,
+          artifactSizeBytes: manifest.sizeBytes,
+          verificationStatus: "VERIFIED",
         },
         {
           environmentId: "ON_PREM",
-          version: MODEL_LATEST_VERSION,
+          version: manifest.metadata.version,
           status: "ACTIVE",
           deployedAt: BASELINE_DEPLOYED_AT,
+          artifactSha256: manifest.sha256,
+          artifactSizeBytes: manifest.sizeBytes,
+          verificationStatus: "VERIFIED",
         },
         {
           environmentId: "AIR_GAPPED",
           // Air-gapped enclaves lag behind cloud/on-prem until an operator
           // manually carries a verified artifact across the boundary.
-          version: "2.3.8",
+          version: "0.9.4",
           status: "UPDATE_PENDING",
           deployedAt: BASELINE_DEPLOYED_AT,
+          artifactSha256: null,
+          artifactSizeBytes: null,
+          verificationStatus: "PENDING",
         },
       ],
     },
@@ -113,7 +120,10 @@ const globalForSentinel = globalThis as unknown as {
 };
 
 function getState(): SentinelStoreState {
-  if (!globalForSentinel.__sentinelStore__) {
+  if (
+    !globalForSentinel.__sentinelStore__ ||
+    !("metadata" in globalForSentinel.__sentinelStore__.modelArtifact)
+  ) {
     globalForSentinel.__sentinelStore__ = createInitialState();
   }
 
@@ -179,12 +189,13 @@ export function resetStore(): void {
 }
 
 /**
- * Simulates carrying the signed model artifact across the air-gap boundary:
- * verify the signature, transfer, import, verify the checksum, then deploy.
- * Returns the full pipeline trail alongside the updated artifact so the UI
- * can show each step, matching the deployment flow in the project README.
+ * Simulates carrying the prepared artifact bytes across the air-gap boundary.
+ * Source and imported SHA-256 values are independently computed and the new
+ * version is activated only when they match.
  */
-export function deployModelToAirGap(): AirGapDeploymentResult {
+export function deployModelToAirGap(
+  importedArtifactBytes?: Uint8Array,
+): AirGapDeploymentResult {
   const state = getState();
   const airGapDeployment = state.modelArtifact.deployments.find(
     (deployment) => deployment.environmentId === "AIR_GAPPED",
@@ -194,20 +205,59 @@ export function deployModelToAirGap(): AirGapDeploymentResult {
     throw new Error("Air-gapped deployment record was not present.");
   }
 
+  const importedBytes = importedArtifactBytes ?? Buffer.from(readArtifactBytes());
+  const verification = verifyImportedArtifact(importedBytes);
   const now = new Date();
   const steps: DeploymentPipelineStep[] = AIR_GAP_PIPELINE_STEPS.map(
     (name, index) => ({
       name,
-      // Offset each step by a second so the trail reads as a real sequence.
       completedAt: new Date(now.getTime() + index * 1000).toISOString(),
+      status: "COMPLETED",
     }),
   );
 
-  airGapDeployment.version = state.modelArtifact.latestVersion;
+  steps.push({
+    name: "Checksum Match",
+    completedAt: new Date(now.getTime() + steps.length * 1000).toISOString(),
+    status: verification.verified ? "COMPLETED" : "FAILED",
+  });
+
+  if (!verification.verified) {
+    airGapDeployment.status = "UPDATE_PENDING";
+    airGapDeployment.verificationStatus = "FAILED";
+
+    return {
+      artifact: state.modelArtifact,
+      steps,
+      verificationPassed: false,
+      sourceSha256: verification.sourceManifest.sha256,
+      importedSha256: verification.importedSha256,
+      failureReason:
+        "Imported artifact checksum does not match the prepared source artifact.",
+    };
+  }
+
+  steps.push({
+    name: "Deployment Verified",
+    completedAt: new Date(now.getTime() + steps.length * 1000).toISOString(),
+    status: "COMPLETED",
+  });
+
+  airGapDeployment.version = verification.sourceManifest.metadata.version;
   airGapDeployment.status = "ACTIVE";
   airGapDeployment.deployedAt = steps[steps.length - 1].completedAt;
+  airGapDeployment.artifactSha256 = verification.sourceManifest.sha256;
+  airGapDeployment.artifactSizeBytes = verification.sourceManifest.sizeBytes;
+  airGapDeployment.verificationStatus = "VERIFIED";
 
-  return { artifact: state.modelArtifact, steps };
+  return {
+    artifact: state.modelArtifact,
+    steps,
+    verificationPassed: true,
+    sourceSha256: verification.sourceManifest.sha256,
+    importedSha256: verification.importedSha256,
+    failureReason: null,
+  };
 }
 
 function nextIncidentId(sequence: number): string {

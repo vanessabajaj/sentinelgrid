@@ -1,0 +1,14 @@
+{
+  "modelName": "SentinelAI",
+  "version": "1.0.0",
+  "engine": "deterministic-security-analysis",
+  "supportedIncidentTypes": [
+    "FIREWALL_LOG",
+    "AUTHENTICATION_LOG",
+    "CVE_ANALYSIS",
+    "THREAT_INTELLIGENCE",
+    "CLASSIFIED_TELEMETRY"
+  ],
+  "analysisSchemaVersion": "1.0",
+  "createdFor": "SentinelGrid prototype"
+}

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatEnvironmentLabel } from "@/features/sentinel/components/display-utils";
 import type {
   AirGapDeploymentResult,
+  ArtifactVerificationStatus,
   DeploymentPipelineStep,
   DeploymentStatus,
   EnvironmentId,
@@ -25,8 +26,22 @@ const STATUS_STYLES: Record<DeploymentStatus, string> = {
   DEPLOYING: "border-accent/35 bg-accent/10 text-accent",
 };
 
+const VERIFICATION_STYLES: Record<ArtifactVerificationStatus, string> = {
+  VERIFIED: "text-success",
+  PENDING: "text-warning",
+  FAILED: "text-danger",
+};
+
 function truncateSha(sha256: string): string {
   return `${sha256.slice(0, 8)}…${sha256.slice(-4)}`;
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (sizeBytes < 1_024) {
+    return `${sizeBytes} B`;
+  }
+
+  return `${(sizeBytes / 1_024).toFixed(1)} KB`;
 }
 
 export function DeploymentPanel() {
@@ -78,6 +93,10 @@ export function DeploymentPanel() {
       const result: AirGapDeploymentResult = await response.json();
       setArtifact(result.artifact);
       setSteps(result.steps);
+
+      if (!result.verificationPassed) {
+        setError(result.failureReason ?? "Artifact checksum verification failed.");
+      }
     } catch {
       setError("Could not complete the air-gap deployment pipeline.");
     } finally {
@@ -111,10 +130,10 @@ export function DeploymentPanel() {
             id="deployment-heading"
             className="mt-1 text-lg font-semibold text-white"
           >
-            {artifact.name} deployment
+            {artifact.name} v{artifact.latestVersion}
           </h2>
           <p className="mt-1 font-mono text-xs text-muted">
-            v{artifact.latestVersion} · SHA256 {truncateSha(artifact.sha256)}
+            Prepared artifact package · {formatBytes(artifact.sizeBytes)}
           </p>
         </div>
         {canDeploy ? (
@@ -127,6 +146,33 @@ export function DeploymentPanel() {
             {isDeploying ? "Deploying…" : "Deploy to Air-Gapped"}
           </button>
         ) : null}
+      </div>
+
+      <div className="border-b border-border px-5 py-4 sm:px-6">
+        <dl className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end">
+          <div className="min-w-0">
+            <dt className="text-xs text-muted">Artifact SHA-256</dt>
+            <dd className="mt-1 break-all font-mono text-xs text-foreground">
+              {artifact.sha256}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">Artifact size</dt>
+            <dd className="mt-1 font-mono text-xs font-semibold text-white">
+              {formatBytes(artifact.sizeBytes)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">Verification</dt>
+            <dd
+              className={`mt-1 font-mono text-xs font-semibold ${
+                artifact.verified ? "text-success" : "text-danger"
+              }`}
+            >
+              {artifact.verified ? "Verified" : "Failed"}
+            </dd>
+          </div>
+        </dl>
       </div>
 
       <div className="grid gap-3 p-5 sm:p-6 md:grid-cols-3">
@@ -150,6 +196,32 @@ export function DeploymentPanel() {
               <p className="mt-2 font-mono text-sm font-semibold text-white">
                 v{deployment.version}
               </p>
+              <dl className="mt-3 space-y-2 border-y border-border py-3">
+                <div>
+                  <dt className="text-[11px] text-muted">Artifact checksum</dt>
+                  <dd className="mt-0.5 font-mono text-[11px] text-foreground">
+                    {deployment.artifactSha256
+                      ? truncateSha(deployment.artifactSha256)
+                      : "Awaiting import"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-muted">Artifact size</dt>
+                  <dd className="mt-0.5 font-mono text-[11px] text-foreground">
+                    {deployment.artifactSizeBytes === null
+                      ? "Not recorded"
+                      : formatBytes(deployment.artifactSizeBytes)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-muted">Verification</dt>
+                  <dd
+                    className={`mt-0.5 font-mono text-[11px] font-semibold ${VERIFICATION_STYLES[deployment.verificationStatus]}`}
+                  >
+                    {deployment.verificationStatus}
+                  </dd>
+                </div>
+              </dl>
               <span
                 className={`mt-3 inline-flex rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLES[deployment.status]}`}
               >
@@ -176,9 +248,15 @@ export function DeploymentPanel() {
             {steps.map((step, index) => (
               <li
                 key={step.name}
-                className="flex items-center gap-2 rounded border border-success/30 bg-success/5 px-2.5 py-1.5 font-mono text-[11px] text-success"
+                className={`flex items-center gap-2 rounded border px-2.5 py-1.5 font-mono text-[11px] ${
+                  step.status === "COMPLETED"
+                    ? "border-success/30 bg-success/5 text-success"
+                    : "border-danger/30 bg-danger/5 text-danger"
+                }`}
               >
-                <span aria-hidden="true">✓</span>
+                <span aria-hidden="true">
+                  {step.status === "COMPLETED" ? "✓" : "!"}
+                </span>
                 {index + 1}. {step.name}
               </li>
             ))}

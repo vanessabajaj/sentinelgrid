@@ -125,7 +125,10 @@ describe("sentinel-store", () => {
     );
 
     expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(artifact.latestVersion).toBe("1.0.0");
+    expect(artifact.verified).toBe(true);
     expect(airGap?.status).toBe("UPDATE_PENDING");
+    expect(airGap?.verificationStatus).toBe("PENDING");
     expect(airGap?.version).not.toBe(artifact.latestVersion);
     expect(cloud?.status).toBe("ACTIVE");
     expect(cloud?.version).toBe(artifact.latestVersion);
@@ -139,10 +142,47 @@ describe("sentinel-store", () => {
 
     expect(airGap?.status).toBe("ACTIVE");
     expect(airGap?.version).toBe(result.artifact.latestVersion);
+    expect(airGap?.artifactSha256).toBe(result.artifact.sha256);
+    expect(airGap?.artifactSizeBytes).toBe(result.artifact.sizeBytes);
+    expect(airGap?.verificationStatus).toBe("VERIFIED");
+    expect(result.verificationPassed).toBe(true);
+    expect(result.sourceSha256).toBe(result.importedSha256);
     expect(result.steps.length).toBeGreaterThan(0);
     expect(result.steps.map((step) => step.name)).toContain(
-      "Checksum verification",
+      "Checksum Match",
     );
+    expect(result.steps.at(-1)).toMatchObject({
+      name: "Deployment Verified",
+      status: "COMPLETED",
+    });
+  });
+
+  it("rejects an air-gap deployment when the imported checksum differs", () => {
+    const before = getModelArtifact().deployments.find(
+      (deployment) => deployment.environmentId === "AIR_GAPPED",
+    );
+    const previousVersion = before?.version;
+    const previousDeployedAt = before?.deployedAt;
+
+    const result = deployModelToAirGap(Buffer.from("tampered artifact bytes"));
+    const after = result.artifact.deployments.find(
+      (deployment) => deployment.environmentId === "AIR_GAPPED",
+    );
+
+    expect(result.verificationPassed).toBe(false);
+    expect(result.sourceSha256).not.toBe(result.importedSha256);
+    expect(result.failureReason).toContain("does not match");
+    expect(result.steps.at(-1)).toMatchObject({
+      name: "Checksum Match",
+      status: "FAILED",
+    });
+    expect(
+      result.steps.some((step) => step.name === "Deployment Verified"),
+    ).toBe(false);
+    expect(after?.status).toBe("UPDATE_PENDING");
+    expect(after?.verificationStatus).toBe("FAILED");
+    expect(after?.version).toBe(previousVersion);
+    expect(after?.deployedAt).toBe(previousDeployedAt);
   });
 
   it("resets to a clean baseline", async () => {

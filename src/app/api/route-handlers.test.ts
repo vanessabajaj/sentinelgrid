@@ -255,8 +255,11 @@ describe("SentinelGrid Route Handlers", () => {
     expect(response.status).toBe(200);
     expect(afterAirGap?.status).toBe("ACTIVE");
     expect(afterAirGap?.version).toBe(result.artifact.latestVersion);
+    expect(afterAirGap?.artifactSha256).toBe(result.artifact.sha256);
+    expect(afterAirGap?.verificationStatus).toBe("VERIFIED");
+    expect(result.verificationPassed).toBe(true);
     expect(result.steps.map((step) => step.name)).toContain(
-      "Checksum verification",
+      "Checksum Match",
     );
   });
 });
