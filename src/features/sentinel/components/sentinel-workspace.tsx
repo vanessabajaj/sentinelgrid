@@ -8,6 +8,11 @@ import { DeploymentPanel } from "@/features/sentinel/components/deployment-panel
 import { EnvironmentGrid } from "@/features/sentinel/components/environment-grid";
 import { IncidentAnalysis } from "@/features/sentinel/components/incident-analysis";
 import { IncidentForm } from "@/features/sentinel/components/incident-form";
+import {
+  createEmptyIncidentFormState,
+  incidentToSubmission,
+  type IncidentFormState,
+} from "@/features/sentinel/components/incident-form-state";
 import { RecentWorkloads } from "@/features/sentinel/components/recent-workloads";
 import { RoutingDecision } from "@/features/sentinel/components/routing-decision";
 import { POLICY_VERSION } from "@/features/sentinel/routing/policy-config";
@@ -15,7 +20,6 @@ import type {
   AuditEntry,
   Environment,
   Incident,
-  IncidentSubmission,
   WorkloadResult,
 } from "@/features/sentinel/types";
 
@@ -24,6 +28,7 @@ interface SentinelWorkspaceProps {
 }
 
 interface WorkspaceState {
+  formState: IncidentFormState;
   environments: Environment[];
   latestResult: WorkloadResult | null;
   auditEntries: AuditEntry[];
@@ -41,6 +46,7 @@ type WorkspaceAction =
       workloads: WorkloadResult[];
     }
   | { type: "hydration-failed" }
+  | { type: "form-state-changed"; formState: IncidentFormState }
   | { type: "submission-started" }
   | { type: "submission-failed"; message: string }
   | {
@@ -67,23 +73,44 @@ function workspaceReducer(
   action: WorkspaceAction,
 ): WorkspaceState {
   switch (action.type) {
-    case "hydration-completed":
+    case "hydration-completed": {
+      const latestWorkload = action.workloads[0] ?? null;
+
       return {
         ...state,
+        formState: latestWorkload
+          ? {
+              selectedDemoId: "",
+              submission: incidentToSubmission(latestWorkload.incident),
+            }
+          : state.formState,
         environments: action.environments,
         auditEntries: action.auditEntries,
         workloads: action.workloads,
-        latestResult: action.workloads[0] ?? null,
+        latestResult: latestWorkload,
         isHydrating: false,
       };
+    }
     case "hydration-failed":
       return {
         ...state,
         isHydrating: false,
         error: "Could not refresh the current in-memory control-plane state.",
       };
+    case "form-state-changed":
+      return {
+        ...state,
+        formState: action.formState,
+        latestResult: null,
+        error: null,
+      };
     case "submission-started":
-      return { ...state, isSubmitting: true, error: null };
+      return {
+        ...state,
+        latestResult: null,
+        isSubmitting: true,
+        error: null,
+      };
     case "submission-failed":
       return { ...state, isSubmitting: false, error: action.message };
     case "submission-completed":
@@ -91,13 +118,25 @@ function workspaceReducer(
         ...state,
         isSubmitting: false,
         error: null,
+        formState: {
+          selectedDemoId: "",
+          submission: incidentToSubmission(action.result.incident),
+        },
         environments: action.environments,
         latestResult: action.result,
         auditEntries: [toAuditEntry(action.result), ...state.auditEntries],
         workloads: [action.result, ...state.workloads],
       };
     case "workload-selected":
-      return { ...state, latestResult: action.workload };
+      return {
+        ...state,
+        formState: {
+          selectedDemoId: "",
+          submission: incidentToSubmission(action.workload.incident),
+        },
+        latestResult: action.workload,
+        error: null,
+      };
     default:
       return state;
   }
@@ -107,6 +146,7 @@ export function SentinelWorkspace({
   demoIncidents,
 }: SentinelWorkspaceProps) {
   const [state, dispatch] = useReducer(workspaceReducer, {
+    formState: createEmptyIncidentFormState(),
     environments: [],
     latestResult: null,
     auditEntries: [],
@@ -182,14 +222,18 @@ export function SentinelWorkspace({
     dispatch({ type: "workload-selected", workload });
   }, []);
 
-  const handleSubmit = useCallback(async (submission: IncidentSubmission) => {
+  const handleFormStateChange = useCallback((formState: IncidentFormState) => {
+    dispatch({ type: "form-state-changed", formState });
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
     dispatch({ type: "submission-started" });
 
     try {
       const response = await fetch("/api/incidents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submission),
+        body: JSON.stringify(state.formState.submission),
       });
 
       const payload: { result?: WorkloadResult; environments?: Environment[]; error?: string } =
@@ -214,7 +258,7 @@ export function SentinelWorkspace({
         message: "Could not reach the SentinelGrid control plane.",
       });
     }
-  }, []);
+  }, [state.formState.submission]);
 
   if (state.isHydrating) {
     return (
@@ -240,6 +284,8 @@ export function SentinelWorkspace({
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
         <IncidentForm
           demoIncidents={demoIncidents}
+          formState={state.formState}
+          onFormStateChange={handleFormStateChange}
           onSubmit={handleSubmit}
           isSubmitting={state.isSubmitting}
           error={state.error}

@@ -162,6 +162,36 @@ export function RoutingDecision({ result }: RoutingDecisionProps) {
           </div>
         </dl>
 
+        {result.workerExecution ? (
+          <div className="mt-5 border-t border-border pt-5">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted">
+              Worker execution
+            </p>
+            <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs text-muted">Executed by</dt>
+                <dd className="mt-1 text-xs font-semibold text-white">
+                  {result.workerExecution.workerName}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Execution mode</dt>
+                <dd className="mt-1 font-mono text-xs font-semibold text-foreground">
+                  {formatEnumLabel(result.workerExecution.executionMode)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Executed environment</dt>
+                <dd className="mt-1 font-mono text-xs font-semibold text-foreground">
+                  {formatEnvironmentLabel(
+                    result.workerExecution.environmentId,
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
+
         <div className="mt-5 border-t border-border pt-5">
           <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted">
             Data classifier

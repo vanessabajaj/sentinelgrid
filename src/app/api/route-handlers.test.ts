@@ -9,6 +9,11 @@ import {
   POST as postIncident,
 } from "@/app/api/incidents/route";
 import { POST as reset } from "@/app/api/reset/route";
+import { mockIncidents } from "@/data/mock-sentinel-data";
+import {
+  createEmptyIncidentFormState,
+  selectDemoScenario,
+} from "@/features/sentinel/components/incident-form-state";
 import { resetStore } from "@/features/sentinel/server/sentinel-store";
 import type {
   AirGapDeploymentResult,
@@ -53,6 +58,14 @@ async function submit(
   return { response, result: payload.result };
 }
 
+function loadDemoSubmission(id: string): IncidentSubmission {
+  return selectDemoScenario(
+    createEmptyIncidentFormState(),
+    mockIncidents,
+    id,
+  ).submission;
+}
+
 describe("SentinelGrid Route Handlers", () => {
   beforeEach(() => {
     resetStore();
@@ -65,6 +78,11 @@ describe("SentinelGrid Route Handlers", () => {
     expect(result.outcome).toBe("ROUTED");
     expect(result.executionStatus).toBe("COMPLETED");
     expect(result.decision?.selectedEnvironment).toBe("CLOUD");
+    expect(result.workerExecution).toMatchObject({
+      environmentId: "CLOUD",
+      workerName: "Sentinel Cloud Worker",
+      executionMode: "EXTERNAL_CAPABLE",
+    });
     expect(result.analysis).not.toBeNull();
   });
 
@@ -103,6 +121,56 @@ describe("SentinelGrid Route Handlers", () => {
     expect(result.executionStatus).toBeNull();
     expect(result.classification.detectedClassification).toBe("SECRET");
     expect(result.decision).toBeNull();
+  });
+
+  it("submits Public CVE correctly after Classified Telemetry", async () => {
+    const classified = await submit(loadDemoSubmission("INC-DEMO-003"));
+    const publicCve = await submit(loadDemoSubmission("INC-DEMO-001"));
+
+    expect(classified.result.decision?.selectedEnvironment).toBe(
+      "AIR_GAPPED",
+    );
+    expect(publicCve.response.status).toBe(201);
+    expect(publicCve.result.incident).toMatchObject({
+      title: "Public CVE exposure research",
+      incidentType: "CVE_ANALYSIS",
+      classification: "PUBLIC",
+      requiredNetworkMode: "EXTERNAL",
+    });
+    expect(publicCve.result).toMatchObject({
+      outcome: "ROUTED",
+      executionStatus: "COMPLETED",
+      workerExecution: {
+        environmentId: "CLOUD",
+        workerName: "Sentinel Cloud Worker",
+      },
+    });
+    expect(publicCve.result.decision?.selectedEnvironment).toBe("CLOUD");
+  });
+
+  it("submits Classified Telemetry correctly after Public CVE", async () => {
+    const publicCve = await submit(loadDemoSubmission("INC-DEMO-001"));
+    const classified = await submit(loadDemoSubmission("INC-DEMO-003"));
+
+    expect(publicCve.result.decision?.selectedEnvironment).toBe("CLOUD");
+    expect(classified.response.status).toBe(201);
+    expect(classified.result.incident).toMatchObject({
+      title: "Classified enclave telemetry review",
+      incidentType: "CLASSIFIED_TELEMETRY",
+      classification: "CLASSIFIED",
+      requiredNetworkMode: "NONE",
+    });
+    expect(classified.result).toMatchObject({
+      outcome: "ROUTED",
+      executionStatus: "COMPLETED",
+      workerExecution: {
+        environmentId: "AIR_GAPPED",
+        workerName: "Sentinel Air-Gap Worker",
+      },
+    });
+    expect(classified.result.decision?.selectedEnvironment).toBe(
+      "AIR_GAPPED",
+    );
   });
 
   it("GET /api/environments returns current released capacity", async () => {

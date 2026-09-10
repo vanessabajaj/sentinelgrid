@@ -14,6 +14,11 @@ export type WorkloadOutcome = RoutingStatus | "QUARANTINED";
 
 export type WorkloadExecutionStatus = "QUEUED" | "RUNNING" | "COMPLETED";
 
+export type WorkerExecutionMode =
+  | "EXTERNAL_CAPABLE"
+  | "CONTROLLED_NETWORK"
+  | "OFFLINE";
+
 export type IncidentType =
   | "FIREWALL_LOG"
   | "AUTHENTICATION_LOG"
@@ -115,8 +120,18 @@ export interface WorkloadResult {
   outcome: WorkloadOutcome;
   /** Execution lifecycle for routed work; null when policy prevents execution. */
   executionStatus: WorkloadExecutionStatus | null;
+  /** Worker metadata for routed work; null when no worker was dispatched. */
+  workerExecution: WorkerExecutionMetadata | null;
   decision: RoutingDecision | null;
   analysis: IncidentAnalysis | null;
+}
+
+export interface WorkerExecutionMetadata {
+  environmentId: EnvironmentId;
+  startedAt: string;
+  completedAt: string;
+  executionMode: WorkerExecutionMode;
+  workerName: string;
 }
 
 /** One chronological event in a reconstructed attack timeline. */

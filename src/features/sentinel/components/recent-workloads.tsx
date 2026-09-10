@@ -89,12 +89,26 @@ export function RecentWorkloads({
                     <td className="px-5 py-4 font-mono text-[11px] text-foreground">
                       {formatEnumLabel(workload.incident.classification)}
                     </td>
-                    <td className="px-5 py-4 font-medium text-foreground">
-                      {workload.decision?.selectedEnvironment
-                        ? formatEnvironmentLabel(
-                            workload.decision.selectedEnvironment,
-                          )
-                        : workload.outcome}
+                    <td className="px-5 py-4 text-foreground">
+                      <span className="font-medium">
+                        {workload.workerExecution
+                          ? formatEnvironmentLabel(
+                              workload.workerExecution.environmentId,
+                            )
+                          : workload.decision?.selectedEnvironment
+                            ? formatEnvironmentLabel(
+                                workload.decision.selectedEnvironment,
+                              )
+                          : workload.outcome}
+                      </span>
+                      {workload.workerExecution ? (
+                        <span className="mt-1 block text-[10px] text-muted">
+                          {workload.workerExecution.workerName} ·{" "}
+                          {formatEnumLabel(
+                            workload.workerExecution.executionMode,
+                          )}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-5 py-4">
                       <span

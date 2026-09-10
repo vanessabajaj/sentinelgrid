@@ -109,12 +109,30 @@ export const mockIncidents = [
       "SYNTHETIC: indicator=demo-threat.example.invalid campaign=SIMULATION-ONLY confidence=unknown",
     submittedAt: "2026-09-09T08:45:00.000Z",
   },
+  {
+    id: "INC-DEMO-005",
+    title: "Under-classified sensitive content",
+    description:
+      "Validate quarantine handling when the declared sensitivity understates the synthetic content.",
+    incidentType: "CLASSIFIED_TELEMETRY",
+    classification: "PUBLIC",
+    severity: "HIGH",
+    requiredNetworkMode: "NONE",
+    estimatedWorkload: 6,
+    sampleContent:
+      "SYNTHETIC: CLASSIFIED enclave telemetry node=sim-node-12 handling=NOFORN status=contained",
+    submittedAt: "2026-09-09T09:00:00.000Z",
+  },
 ] satisfies Incident[];
 
-/** Expected results for the future policy-routing implementation and its tests. */
+/** Expected end-to-end outcomes for the built-in demo scenarios. */
 export const mockExpectedRoutingOutcomes = {
   "INC-DEMO-001": "CLOUD",
   "INC-DEMO-002": "ON_PREM",
   "INC-DEMO-003": "AIR_GAPPED",
   "INC-DEMO-004": "BLOCKED",
-} as const satisfies Record<string, EnvironmentId | "BLOCKED">;
+  "INC-DEMO-005": "QUARANTINED",
+} as const satisfies Record<
+  string,
+  EnvironmentId | "BLOCKED" | "QUARANTINED"
+>;

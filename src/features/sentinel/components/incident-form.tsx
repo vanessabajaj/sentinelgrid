@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-
 import { formatEnumLabel } from "@/features/sentinel/components/display-utils";
+import {
+  selectDemoScenario,
+  type IncidentFormState,
+} from "@/features/sentinel/components/incident-form-state";
 import type {
   Classification,
   Incident,
-  IncidentSubmission,
   IncidentType,
   NetworkMode,
   Severity,
@@ -14,12 +15,14 @@ import type {
 
 interface IncidentFormProps {
   demoIncidents: Incident[];
-  onSubmit: (submission: IncidentSubmission) => void | Promise<void>;
+  formState: IncidentFormState;
+  onFormStateChange: (formState: IncidentFormState) => void;
+  onSubmit: () => void | Promise<void>;
   isSubmitting: boolean;
   error: string | null;
 }
 
-type IncidentDraft = Omit<Incident, "id" | "sampleContent" | "submittedAt">;
+type IncidentDraft = Omit<Incident, "id" | "submittedAt">;
 
 const INCIDENT_TYPES: IncidentType[] = [
   "FIREWALL_LOG",
@@ -38,66 +41,36 @@ const CLASSIFICATIONS: Classification[] = [
 const SEVERITIES: Severity[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 const NETWORK_MODES: NetworkMode[] = ["NONE", "CONTROLLED", "EXTERNAL"];
 
-const EMPTY_DRAFT: IncidentDraft = {
-  title: "",
-  description: "",
-  incidentType: "FIREWALL_LOG",
-  classification: "PUBLIC",
-  severity: "MEDIUM",
-  requiredNetworkMode: "NONE",
-  estimatedWorkload: 10,
-};
-
 const INPUT_CLASS_NAME =
   "mt-2 w-full rounded-md border border-border bg-surface px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-muted/60 hover:border-muted/50 focus:border-accent focus:ring-2 focus:ring-accent/15";
 
 export function IncidentForm({
   demoIncidents,
+  formState,
+  onFormStateChange,
   onSubmit,
   isSubmitting,
   error,
 }: IncidentFormProps) {
-  const [draft, setDraft] = useState<IncidentDraft>(EMPTY_DRAFT);
-  const [selectedDemoId, setSelectedDemoId] = useState("");
+  const draft = formState.submission;
 
   function updateDraft<Field extends keyof IncidentDraft>(
     field: Field,
     value: IncidentDraft[Field],
   ) {
-    setDraft((current) => ({ ...current, [field]: value }));
+    onFormStateChange({
+      ...formState,
+      submission: { ...formState.submission, [field]: value },
+    });
   }
 
   function loadDemoScenario(id: string) {
-    setSelectedDemoId(id);
-    const scenario = demoIncidents.find((incident) => incident.id === id);
-
-    if (!scenario) {
-      return;
-    }
-
-    setDraft({
-      title: scenario.title,
-      description: scenario.description,
-      incidentType: scenario.incidentType,
-      classification: scenario.classification,
-      severity: scenario.severity,
-      requiredNetworkMode: scenario.requiredNetworkMode,
-      estimatedWorkload: scenario.estimatedWorkload,
-    });
+    onFormStateChange(selectDemoScenario(formState, demoIncidents, id));
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const selectedDemo = demoIncidents.find(
-      (incident) => incident.id === selectedDemoId,
-    );
-
-    void onSubmit({
-      ...draft,
-      sampleContent:
-        selectedDemo?.sampleContent ??
-        "SYNTHETIC: Local analyst-created demonstration incident.",
-    });
+    void onSubmit();
   }
 
   return (
@@ -130,7 +103,7 @@ export function IncidentForm({
           </label>
           <select
             id="demo-scenario"
-            value={selectedDemoId}
+            value={formState.selectedDemoId}
             onChange={(event) => loadDemoScenario(event.target.value)}
             className={INPUT_CLASS_NAME}
           >
@@ -143,10 +116,13 @@ export function IncidentForm({
             <option value="INC-DEMO-004">
               Secret External-Network Request
             </option>
+            <option value="INC-DEMO-005">
+              Under-classified Sensitive Content
+            </option>
           </select>
           <p className="mt-2 text-xs text-muted">
-            Loading a scenario only populates the form. Evaluation remains
-            manual.
+            Five synthetic cases cover routed, blocked, and quarantined
+            outcomes. Evaluation remains manual.
           </p>
         </div>
 

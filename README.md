@@ -32,8 +32,9 @@ the same way and leaves an audit trail explaining why.
    is lower than what the content actually contains (e.g. a SECRET-content
    job mislabeled PUBLIC) — an explicit tamper/misclassification check, not
    just "trust the label."
-4. **Analyzes** routed incidents: severity, suspected attack type,
-   indicators, an attack timeline, and recommended actions.
+4. **Dispatches and analyzes** routed incidents through an environment-specific
+   local worker: severity, suspected attack type, indicators, an attack
+   timeline, and recommended actions.
 5. **Manages deployment** of the model artifact across all three
    environments, including simulating the air-gap transfer pipeline
    (signed artifact → security verification → manual transfer → air-gap
@@ -51,8 +52,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Run the test suite (43 tests covering classification, routing, analysis,
-timelines, the orchestrator, and Route Handlers):
+Run the test suite (59 tests covering classification, routing, analysis,
+timelines, worker dispatch, the orchestrator, and Route Handlers):
 
 ```bash
 npm test
@@ -68,8 +69,7 @@ npm start
 ## Demo walkthrough
 
 Use the **Load demo scenario** dropdown on the incident form, or fill in
-your own. These four cover the required "three classifications routed
-correctly, plus one correctly refused":
+your own. These five cover routed, blocked, and quarantined outcomes:
 
 | # | Scenario | Declared classification | Expected result |
 |---|---|---|---|
@@ -77,12 +77,11 @@ correctly, plus one correctly refused":
 | 2 | Confidential authentication anomaly | CONFIDENTIAL | → **On-Prem** |
 | 3 | Classified enclave telemetry | CLASSIFIED | → **Air-Gapped** |
 | 4 | Secret indicator + external lookup request | SECRET | → **Blocked** (air-gapped-only data cannot reach an external service) |
+| 5 | Under-classified sensitive content | PUBLIC | → **Quarantined** (content is detected as CLASSIFIED) |
 
-A fifth path worth trying manually: submit a job **declared PUBLIC** whose
-content contains a classification marker (e.g. the word "SECRET") or an
-internal IP address (`10.x`, `172.16–31.x`, `192.168.x`) — it gets
-**quarantined** instead of routed, because the detected sensitivity
-outranks the declared one.
+The fifth scenario is declared PUBLIC, but its synthetic content includes
+classification markers. It is quarantined before policy routing or worker
+dispatch because the detected sensitivity outranks the declared value.
 
 Then open the **SentinelAI deployment** panel and click **Deploy to
 Air-Gapped** to watch the artifact carry across the air-gap boundary
@@ -103,7 +102,13 @@ Classification engine   — src/features/sentinel/classification/
 Policy engine           — src/features/sentinel/routing/
         ↓
 In-memory job store     — src/features/sentinel/server/sentinel-store.ts
-   (environment capacity, workload history, audit trail, model artifact)
+        ↓
+Worker dispatcher       — src/features/sentinel/workers/
+        ↓
+Environment workers     — Cloud / On-Prem / Air-Gapped (local simulation)
+
+The in-memory store owns environment capacity, workload history, the audit
+trail, and model artifact state.
 ```
 
 | Concern | Where |
@@ -113,6 +118,7 @@ In-memory job store     — src/features/sentinel/server/sentinel-store.ts
 | Routing/eligibility evaluation | `src/features/sentinel/routing/evaluate-routing.ts` |
 | Incident analysis + attack timeline generation | `src/features/sentinel/analysis/` |
 | Orchestrator: capacity allocation/release, workload completion, quarantine, audit trail, model deployment state | `src/features/sentinel/server/sentinel-store.ts` |
+| Worker registry + environment-specific deterministic execution | `src/features/sentinel/workers/` |
 | API: `POST/GET /api/incidents`, `GET /api/environments`, `GET /api/audit`, `GET /api/deployment`, `POST /api/deployment/air-gap`, `POST /api/reset` | `src/app/api/` |
 | Dashboard UI | `src/features/sentinel/components/` |
 
@@ -130,9 +136,10 @@ layer*, not a production SOC platform:
 - **"AI analysis" (severity, attack type, indicators, timeline)** is
   template- and regex-driven against the synthetic sample content, not a
   live LLM call — deterministic and reproducible for demo purposes.
-- **The three environments are simulated as one in-process store**, not
-  three real deployments. Capacity, online/offline state, and network mode
-  are modeled data, not real infrastructure.
+- **The three environments are simulated in-process**, not three real
+  deployments. Their workers are local abstractions, and capacity,
+  online/offline state, and network mode are modeled data rather than real
+  infrastructure.
 - **State is in-memory** and resets when the server restarts. A durable
   store (Postgres/SQLite) is the natural next step, not implemented here.
 - **The model artifact and its SHA256 are illustrative**, not a hash of

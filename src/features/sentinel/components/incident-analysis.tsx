@@ -48,7 +48,9 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
           </h2>
         </div>
         <span className="w-fit rounded border border-border bg-surface px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted">
-          Simulated local analysis
+          {result.workerExecution
+            ? `Executed by: ${result.workerExecution.workerName}`
+            : "Simulated local analysis"}
         </span>
       </div>
 

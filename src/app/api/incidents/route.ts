@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
-  const result = submitIncident(body as IncidentSubmission);
+  const result = await submitIncident(body as IncidentSubmission);
 
   return NextResponse.json(
     { result, environments: getEnvironments() },

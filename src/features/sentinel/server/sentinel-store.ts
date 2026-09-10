@@ -3,9 +3,9 @@ import {
   classifyContent,
   hasClassificationConflict,
 } from "@/features/sentinel/classification/classify-content";
-import { generateIncidentAnalysis } from "@/features/sentinel/analysis/generate-incident-analysis";
 import { evaluateRouting } from "@/features/sentinel/routing/evaluate-routing";
 import { POLICY_VERSION } from "@/features/sentinel/routing/policy-config";
+import { dispatchIncident } from "@/features/sentinel/workers/dispatch-incident";
 import type {
   AirGapDeploymentResult,
   AuditEntry,
@@ -14,6 +14,7 @@ import type {
   Incident,
   IncidentSubmission,
   ModelArtifact,
+  WorkerExecutionMetadata,
   WorkloadResult,
 } from "@/features/sentinel/types";
 
@@ -200,10 +201,13 @@ function releaseCapacity(environment: Environment, units: number): void {
  * Processes one incident submission end to end: classify, check for a
  * declared-vs-detected classification conflict (quarantining if found),
  * evaluate routing against live environment capacity, run a routed job through
- * its deterministic execution lifecycle, release its capacity on completion,
- * and generate an analysis. Every outcome is recorded to the audit trail.
+ * its deterministic lifecycle on the selected environment worker, release its
+ * capacity on completion, and retain the result. Every outcome is recorded to
+ * the audit trail.
  */
-export function submitIncident(submission: IncidentSubmission): WorkloadResult {
+export async function submitIncident(
+  submission: IncidentSubmission,
+): Promise<WorkloadResult> {
   const state = getState();
   state.sequence += 1;
 
@@ -230,6 +234,7 @@ export function submitIncident(submission: IncidentSubmission): WorkloadResult {
       classification,
       outcome: "QUARANTINED",
       executionStatus: null,
+      workerExecution: null,
       decision: null,
       analysis: null,
     };
@@ -244,6 +249,7 @@ export function submitIncident(submission: IncidentSubmission): WorkloadResult {
     const decision = evaluateRouting(effectiveIncident, state.environments);
 
     let executionStatus: WorkloadResult["executionStatus"] = null;
+    let workerExecution: WorkerExecutionMetadata | null = null;
     let analysis: WorkloadResult["analysis"] = null;
 
     if (decision.status === "ROUTED" && decision.selectedEnvironment) {
@@ -255,12 +261,24 @@ export function submitIncident(submission: IncidentSubmission): WorkloadResult {
         throw new Error("Selected environment was not present in the store.");
       }
 
-      executionStatus = "QUEUED";
       allocateCapacity(environment, incident.estimatedWorkload);
+      executionStatus = "QUEUED";
       executionStatus = "RUNNING";
 
       try {
-        analysis = generateIncidentAnalysis(incident);
+        const workerResult = await dispatchIncident(
+          incident,
+          decision.selectedEnvironment,
+        );
+
+        analysis = workerResult.analysis;
+        workerExecution = {
+          environmentId: workerResult.environmentId,
+          startedAt: workerResult.startedAt,
+          completedAt: workerResult.completedAt,
+          executionMode: workerResult.executionMode,
+          workerName: workerResult.workerName,
+        };
       } finally {
         releaseCapacity(environment, incident.estimatedWorkload);
       }
@@ -273,6 +291,7 @@ export function submitIncident(submission: IncidentSubmission): WorkloadResult {
       classification,
       outcome: decision.status,
       executionStatus,
+      workerExecution,
       decision,
       analysis,
     };
