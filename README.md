@@ -39,7 +39,9 @@ the same way and leaves an audit trail explaining why.
    environments, including simulating the air-gap transfer pipeline
    (artifact preparation → SHA-256 computation → transfer package → air-gap
    import → SHA-256 recomputation → checksum match → verified deployment).
-6. **Logs every decision** to an audit trail with its justification.
+6. **Persists every decision** and execution result to SQLite, including the
+   audit trail and model deployment state, so control-plane restarts do not
+   erase history.
 
 ## Getting started
 
@@ -56,9 +58,10 @@ Open [http://localhost:3000](http://localhost:3000).
 same worker contracts and deterministic analysis as the service transport,
 but does not require Docker.
 
-Run the test suite (79 tests covering classification, routing, analysis,
+Run the test suite (90 tests covering classification, routing, analysis,
 timelines, local and HTTP worker dispatch, worker service contracts, the
-orchestrator, real artifact verification, and Route Handlers):
+orchestrator, real artifact verification, SQLite restart durability, and Route
+Handlers):
 
 ```bash
 npm test
@@ -94,6 +97,11 @@ Host ports can be changed with `SENTINELGRID_PORT`, `CLOUD_WORKER_PORT`, and
 internal port. The control plane discovers workers through
 `CLOUD_WORKER_URL`, `ONPREM_WORKER_URL`, and `AIRGAP_WORKER_URL`; Compose
 supplies their internal service URLs.
+
+The control plane stores SQLite data at `/app/data/sentinelgrid.sqlite`. Compose
+mounts the named volume `sentinelgrid-data` at `/app/data`, so recreating only
+the control-plane container retains workloads, audits, and deployment state.
+`docker compose down` preserves the volume; `docker compose down -v` removes it.
 
 Stop and remove the prototype containers with:
 
@@ -154,14 +162,15 @@ Browser dashboard
 Next.js control plane :3000
        │ classify → deterministic policy route → allocate capacity
        │
+       ├── SQLite → /app/data/sentinelgrid.sqlite
        ├── HTTP → Cloud Worker :4101
        ├── HTTP → On-Prem Worker :4102
        └── HTTP → Air-Gapped Worker :4103
                     (isolated internal Docker network)
 
 Each worker imports the same deterministic analysis and timeline modules.
-The in-memory control-plane store owns capacity, workload history, audit
-records, worker health observations, and model artifact state.
+The control-plane orchestration service coordinates policy and worker calls;
+SQLite is the durable source of truth for application state.
 ```
 
 `SENTINEL_WORKER_MODE=http` selects service dispatch and requires all three
@@ -175,6 +184,33 @@ the workload remains routed to that selected environment but its execution is
 recorded as `FAILED`. Capacity is released in all cases, the failure is kept in
 workload history, and SentinelGrid does not attempt another environment.
 
+## Local persistence
+
+SentinelGrid uses `better-sqlite3` and a committed, idempotent schema migration.
+For local development the database defaults to
+`data/sentinelgrid.sqlite`; set `SENTINEL_DB_PATH` to use another location.
+Automated tests use isolated in-memory or temporary-file databases and never
+write to the developer database.
+
+Durable records include complete incident/workload results, routing decisions,
+detected classifications, worker execution/failure metadata, analysis and
+timelines, audit entries (including environment evaluations and explanation),
+environment capacity configuration, and deployment/checksum state. Structured
+objects are serialized as JSON where relational querying is not needed; IDs,
+timestamps, outcomes, selected environments, and lifecycle statuses remain
+explicit columns.
+
+Worker health is deliberately runtime-only. A new control-plane process starts
+with `UNKNOWN` health and refreshes it from live workers. Immediate worker jobs
+cannot resume after a restart: any persisted `QUEUED` or `RUNNING` job is marked
+`FAILED`, its audit record is retained, and capacity is reconciled to the
+configured baseline. Completed and failed jobs therefore never leave phantom
+capacity allocated.
+
+`POST /api/reset` clears application records, resets the incident sequence,
+environment capacity, and deployments to the prototype baseline, but preserves
+the database file, schema/migrations, artifact, and application configuration.
+
 | Concern | Where |
 |---|---|
 | Classification engine (detects PII, internal IPs, credentials, classification markers, external-network requests) | `src/features/sentinel/classification/classify-content.ts` |
@@ -183,6 +219,7 @@ workload history, and SentinelGrid does not attempt another environment.
 | Incident analysis + attack timeline generation | `src/features/sentinel/analysis/` |
 | Artifact loading, byte hashing, manifests, and checksum verification | `src/features/sentinel/artifacts/artifact-service.ts` |
 | Orchestrator: capacity allocation/release, workload completion, quarantine, audit trail, model deployment state | `src/features/sentinel/server/sentinel-store.ts` |
+| SQLite connection, migration, and repositories | `src/features/sentinel/persistence/` |
 | Local/HTTP dispatch, worker registry, health checks, and response validation | `src/features/sentinel/workers/` |
 | Standalone worker HTTP service (`GET /health`, `POST /execute`) | `src/features/sentinel/worker-service/` |
 | API: `POST/GET /api/incidents`, `GET /api/environments`, `GET /api/audit`, `GET /api/deployment`, `POST /api/deployment/air-gap`, `POST /api/reset` | `src/app/api/` |
@@ -211,8 +248,9 @@ layer*, not a production SOC platform:
   retaining the channel required for dispatch. This is a logical air-gap
   simulation for the prototype, not a production-grade physical isolation
   boundary.
-- **State is in-memory** and resets when the server restarts. A durable
-  store (Postgres/SQLite) is the natural next step, not implemented here.
+- **Application state is durable in local SQLite**, but this remains a
+  single-control-plane prototype without production backup, replication,
+  encryption-at-rest management, or distributed concurrency controls.
 - **The model artifact is real metadata, but not a real model package.** Its
   SHA-256 is computed and verified from the actual local bytes. Transfer is
   simulated, and no cryptographic signing infrastructure or external registry
@@ -223,5 +261,5 @@ scenarios are synthetic.
 
 ## Tech stack
 
-Next.js 16 (App Router, Route Handlers) · React 19 · TypeScript ·
-Tailwind CSS · Vitest.
+Next.js 16 (App Router, Route Handlers) · React 19 · TypeScript · SQLite
+(`better-sqlite3`) · Tailwind CSS · Vitest.

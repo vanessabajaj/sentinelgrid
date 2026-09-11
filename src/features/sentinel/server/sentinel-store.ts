@@ -8,6 +8,8 @@ import {
   classifyContent,
   hasClassificationConflict,
 } from "@/features/sentinel/classification/classify-content";
+import { createPersistence } from "@/features/sentinel/persistence/sentinel-persistence";
+import type { SentinelPersistence } from "@/features/sentinel/persistence/sentinel-persistence";
 import { evaluateRouting } from "@/features/sentinel/routing/evaluate-routing";
 import { POLICY_VERSION } from "@/features/sentinel/routing/policy-config";
 import { dispatchIncident } from "@/features/sentinel/workers/dispatch-incident";
@@ -24,11 +26,14 @@ import type {
   AuditEntry,
   DeploymentPipelineStep,
   Environment,
+  EnvironmentId,
   Incident,
   IncidentSubmission,
   ModelArtifact,
-  WorkerExecutionMetadata,
+  ModelDeployment,
   WorkerExecutionFailure,
+  WorkerExecutionMetadata,
+  WorkerHealthStatus,
   WorkloadResult,
 } from "@/features/sentinel/types";
 
@@ -40,224 +45,47 @@ const AIR_GAP_PIPELINE_STEPS = [
   "SHA-256 Recomputed",
 ] as const;
 
-/**
- * In-memory job orchestrator for the SentinelGrid demo. It holds the mutable
- * environment capacity state, the workload history, and the audit trail — a
- * shared "control plane" for every request within this server process.
- *
- * This is a demo-scale simulator, not a durable store: state resets when the
- * server process restarts. Persisting to a real database (per the system
- * architecture in the project README) is the natural next step.
- */
-
-interface SentinelStoreState {
-  environments: Environment[];
-  workloads: WorkloadResult[];
-  auditEntries: AuditEntry[];
-  modelArtifact: ModelArtifact;
-  sequence: number;
-}
-
 const BASELINE_DEPLOYED_AT = "2026-09-01T00:00:00.000Z";
 
-function createInitialState(): SentinelStoreState {
+function cloneBaselineEnvironments(): Environment[] {
+  return mockEnvironments.map((environment) => ({
+    ...environment,
+    supportedIncidentTypes: [...environment.supportedIncidentTypes],
+  }));
+}
+
+function createBaselineDeployments(): ModelDeployment[] {
   const manifest = getArtifactManifest();
 
-  return {
-    environments: mockEnvironments.map((environment) => ({
-      ...environment,
-      supportedIncidentTypes: [...environment.supportedIncidentTypes],
-    })),
-    workloads: [],
-    auditEntries: [],
-    modelArtifact: {
-      name: manifest.metadata.modelName,
-      latestVersion: manifest.metadata.version,
-      sha256: manifest.sha256,
-      sizeBytes: manifest.sizeBytes,
-      verified: manifest.verified,
-      metadata: manifest.metadata,
-      deployments: [
-        {
-          environmentId: "CLOUD",
-          version: manifest.metadata.version,
-          status: "ACTIVE",
-          deployedAt: BASELINE_DEPLOYED_AT,
-          artifactSha256: manifest.sha256,
-          artifactSizeBytes: manifest.sizeBytes,
-          verificationStatus: "VERIFIED",
-        },
-        {
-          environmentId: "ON_PREM",
-          version: manifest.metadata.version,
-          status: "ACTIVE",
-          deployedAt: BASELINE_DEPLOYED_AT,
-          artifactSha256: manifest.sha256,
-          artifactSizeBytes: manifest.sizeBytes,
-          verificationStatus: "VERIFIED",
-        },
-        {
-          environmentId: "AIR_GAPPED",
-          // Air-gapped enclaves lag behind cloud/on-prem until an operator
-          // manually carries a verified artifact across the boundary.
-          version: "0.9.4",
-          status: "UPDATE_PENDING",
-          deployedAt: BASELINE_DEPLOYED_AT,
-          artifactSha256: null,
-          artifactSizeBytes: null,
-          verificationStatus: "PENDING",
-        },
-      ],
+  return [
+    {
+      environmentId: "CLOUD",
+      version: manifest.metadata.version,
+      status: "ACTIVE",
+      deployedAt: BASELINE_DEPLOYED_AT,
+      artifactSha256: manifest.sha256,
+      artifactSizeBytes: manifest.sizeBytes,
+      verificationStatus: "VERIFIED",
     },
-    sequence: 0,
-  };
-}
-
-// Cached on `globalThis` so the store survives Next.js dev-server module
-// reloads instead of silently resetting on every hot reload.
-const globalForSentinel = globalThis as unknown as {
-  __sentinelStore__?: SentinelStoreState;
-};
-
-function getState(): SentinelStoreState {
-  if (
-    !globalForSentinel.__sentinelStore__ ||
-    !("metadata" in globalForSentinel.__sentinelStore__.modelArtifact)
-  ) {
-    globalForSentinel.__sentinelStore__ = createInitialState();
-  }
-
-  return globalForSentinel.__sentinelStore__;
-}
-
-export function getEnvironments(): Environment[] {
-  return getState().environments;
-}
-
-/** Refreshes informational worker health without changing routing availability. */
-export async function refreshWorkerHealth(): Promise<void> {
-  const environments = getState().environments;
-  let mode: ReturnType<typeof getWorkerDispatchMode>;
-
-  try {
-    mode = getWorkerDispatchMode();
-  } catch {
-    for (const environment of environments) {
-      environment.workerStatus = "UNKNOWN";
-    }
-    return;
-  }
-
-  if (mode === "local") {
-    for (const environment of environments) {
-      environment.workerStatus = "ONLINE";
-    }
-    return;
-  }
-
-  const statuses = await Promise.all(
-    environments.map(async (environment) => ({
-      environmentId: environment.id,
-      status: await checkWorkerHealth(environment.id),
-    })),
-  );
-
-  for (const { environmentId, status } of statuses) {
-    const environment = environments.find(
-      (candidate) => candidate.id === environmentId,
-    );
-    if (environment) {
-      environment.workerStatus = status;
-    }
-  }
-}
-
-export function listWorkloads(): WorkloadResult[] {
-  return getState().workloads;
-}
-
-export function listAuditEntries(): AuditEntry[] {
-  return getState().auditEntries;
-}
-
-export function getModelArtifact(): ModelArtifact {
-  return getState().modelArtifact;
-}
-
-export function resetStore(): void {
-  globalForSentinel.__sentinelStore__ = createInitialState();
-}
-
-/**
- * Simulates carrying the prepared artifact bytes across the air-gap boundary.
- * Source and imported SHA-256 values are independently computed and the new
- * version is activated only when they match.
- */
-export function deployModelToAirGap(
-  importedArtifactBytes?: Uint8Array,
-): AirGapDeploymentResult {
-  const state = getState();
-  const airGapDeployment = state.modelArtifact.deployments.find(
-    (deployment) => deployment.environmentId === "AIR_GAPPED",
-  );
-
-  if (!airGapDeployment) {
-    throw new Error("Air-gapped deployment record was not present.");
-  }
-
-  const importedBytes = importedArtifactBytes ?? Buffer.from(readArtifactBytes());
-  const verification = verifyImportedArtifact(importedBytes);
-  const now = new Date();
-  const steps: DeploymentPipelineStep[] = AIR_GAP_PIPELINE_STEPS.map(
-    (name, index) => ({
-      name,
-      completedAt: new Date(now.getTime() + index * 1000).toISOString(),
-      status: "COMPLETED",
-    }),
-  );
-
-  steps.push({
-    name: "Checksum Match",
-    completedAt: new Date(now.getTime() + steps.length * 1000).toISOString(),
-    status: verification.verified ? "COMPLETED" : "FAILED",
-  });
-
-  if (!verification.verified) {
-    airGapDeployment.status = "UPDATE_PENDING";
-    airGapDeployment.verificationStatus = "FAILED";
-
-    return {
-      artifact: state.modelArtifact,
-      steps,
-      verificationPassed: false,
-      sourceSha256: verification.sourceManifest.sha256,
-      importedSha256: verification.importedSha256,
-      failureReason:
-        "Imported artifact checksum does not match the prepared source artifact.",
-    };
-  }
-
-  steps.push({
-    name: "Deployment Verified",
-    completedAt: new Date(now.getTime() + steps.length * 1000).toISOString(),
-    status: "COMPLETED",
-  });
-
-  airGapDeployment.version = verification.sourceManifest.metadata.version;
-  airGapDeployment.status = "ACTIVE";
-  airGapDeployment.deployedAt = steps[steps.length - 1].completedAt;
-  airGapDeployment.artifactSha256 = verification.sourceManifest.sha256;
-  airGapDeployment.artifactSizeBytes = verification.sourceManifest.sizeBytes;
-  airGapDeployment.verificationStatus = "VERIFIED";
-
-  return {
-    artifact: state.modelArtifact,
-    steps,
-    verificationPassed: true,
-    sourceSha256: verification.sourceManifest.sha256,
-    importedSha256: verification.importedSha256,
-    failureReason: null,
-  };
+    {
+      environmentId: "ON_PREM",
+      version: manifest.metadata.version,
+      status: "ACTIVE",
+      deployedAt: BASELINE_DEPLOYED_AT,
+      artifactSha256: manifest.sha256,
+      artifactSizeBytes: manifest.sizeBytes,
+      verificationStatus: "VERIFIED",
+    },
+    {
+      environmentId: "AIR_GAPPED",
+      version: "0.9.4",
+      status: "UPDATE_PENDING",
+      deployedAt: BASELINE_DEPLOYED_AT,
+      artifactSha256: null,
+      artifactSizeBytes: null,
+      verificationStatus: "PENDING",
+    },
+  ];
 }
 
 function nextIncidentId(sequence: number): string {
@@ -278,147 +106,408 @@ function toAuditEntry(result: WorkloadResult): AuditEntry {
   };
 }
 
-function allocateCapacity(environment: Environment, units: number): void {
-  const nextUsedCapacity = environment.usedCapacity + units;
+/** SQLite-backed orchestration service. Worker health remains runtime-only. */
+export class SentinelStore {
+  private readonly workerHealth = new Map<
+    EnvironmentId,
+    WorkerHealthStatus
+  >();
 
-  if (nextUsedCapacity > environment.capacity) {
-    throw new Error(
-      `${environment.displayName} cannot allocate ${units} capacity units.`,
-    );
+  constructor(private readonly persistence: SentinelPersistence) {
+    this.recoverInterruptedExecutions();
   }
 
-  environment.usedCapacity = Math.min(environment.capacity, nextUsedCapacity);
-}
+  getEnvironments(): Environment[] {
+    return this.persistence.environments.list().map((environment) => ({
+      ...environment,
+      workerStatus: this.workerHealth.get(environment.id) ?? "UNKNOWN",
+    }));
+  }
 
-function releaseCapacity(environment: Environment, units: number): void {
-  environment.usedCapacity = Math.max(0, environment.usedCapacity - units);
-}
+  async refreshWorkerHealth(): Promise<void> {
+    const environments = this.persistence.environments.list();
+    let mode: ReturnType<typeof getWorkerDispatchMode>;
 
-/**
- * Processes one incident submission end to end: classify, check for a
- * declared-vs-detected classification conflict (quarantining if found),
- * evaluate routing against live environment capacity, run a routed job through
- * its deterministic lifecycle on the selected environment worker, release its
- * capacity on completion, and retain the result. Every outcome is recorded to
- * the audit trail.
- */
-export async function submitIncident(
-  submission: IncidentSubmission,
-): Promise<WorkloadResult> {
-  const state = getState();
-  state.sequence += 1;
+    try {
+      mode = getWorkerDispatchMode();
+    } catch {
+      for (const environment of environments) {
+        this.workerHealth.set(environment.id, "UNKNOWN");
+      }
+      return;
+    }
 
-  const incident: Incident = {
-    ...submission,
-    id: nextIncidentId(state.sequence),
-    submittedAt: new Date().toISOString(),
-  };
+    if (mode === "local") {
+      for (const environment of environments) {
+        this.workerHealth.set(environment.id, "ONLINE");
+      }
+      return;
+    }
 
-  const classification = classifyContent(
-    `${incident.title} ${incident.description} ${incident.sampleContent}`,
-  );
+    const statuses = await Promise.all(
+      environments.map(async (environment) => ({
+        environmentId: environment.id,
+        status: await checkWorkerHealth(environment.id),
+      })),
+    );
 
-  const conflict = hasClassificationConflict(
-    incident.classification,
-    classification.detectedClassification,
-  );
+    for (const { environmentId, status } of statuses) {
+      this.workerHealth.set(environmentId, status);
+    }
+  }
 
-  let result: WorkloadResult;
+  listWorkloads(): WorkloadResult[] {
+    return this.persistence.workloads.list();
+  }
 
-  if (conflict) {
-    result = {
-      incident,
-      classification,
-      outcome: "QUARANTINED",
-      executionStatus: null,
-      workerExecution: null,
-      executionFailure: null,
-      decision: null,
-      analysis: null,
+  listAuditEntries(): AuditEntry[] {
+    return this.persistence.audits.list();
+  }
+
+  getModelArtifact(): ModelArtifact {
+    const manifest = getArtifactManifest();
+
+    return {
+      name: manifest.metadata.modelName,
+      latestVersion: manifest.metadata.version,
+      sha256: manifest.sha256,
+      sizeBytes: manifest.sizeBytes,
+      verified: manifest.verified,
+      metadata: manifest.metadata,
+      deployments: this.persistence.deployments.list(),
     };
-  } else {
-    // A detected requirement for external lookups (e.g. "search VirusTotal")
-    // escalates the effective network requirement even if the analyst didn't
-    // declare one, so the policy engine can block it where appropriate.
+  }
+
+  reset(): void {
+    this.persistence.reset();
+    this.workerHealth.clear();
+  }
+
+  close(): void {
+    this.persistence.close();
+  }
+
+  deployModelToAirGap(
+    importedArtifactBytes?: Uint8Array,
+  ): AirGapDeploymentResult {
+    const artifact = this.getModelArtifact();
+    const airGapDeployment = artifact.deployments.find(
+      (deployment) => deployment.environmentId === "AIR_GAPPED",
+    );
+
+    if (!airGapDeployment) {
+      throw new Error("Air-gapped deployment record was not present.");
+    }
+
+    const importedBytes =
+      importedArtifactBytes ?? Buffer.from(readArtifactBytes());
+    const verification = verifyImportedArtifact(importedBytes);
+    const now = new Date();
+    const steps: DeploymentPipelineStep[] = AIR_GAP_PIPELINE_STEPS.map(
+      (name, index) => ({
+        name,
+        completedAt: new Date(now.getTime() + index * 1000).toISOString(),
+        status: "COMPLETED",
+      }),
+    );
+
+    steps.push({
+      name: "Checksum Match",
+      completedAt: new Date(now.getTime() + steps.length * 1000).toISOString(),
+      status: verification.verified ? "COMPLETED" : "FAILED",
+    });
+
+    if (!verification.verified) {
+      const failedDeployment: ModelDeployment = {
+        ...airGapDeployment,
+        status: "UPDATE_PENDING",
+        verificationStatus: "FAILED",
+      };
+      this.persistence.deployments.save(failedDeployment);
+
+      return {
+        artifact: replaceDeployment(artifact, failedDeployment),
+        steps,
+        verificationPassed: false,
+        sourceSha256: verification.sourceManifest.sha256,
+        importedSha256: verification.importedSha256,
+        failureReason:
+          "Imported artifact checksum does not match the prepared source artifact.",
+      };
+    }
+
+    steps.push({
+      name: "Deployment Verified",
+      completedAt: new Date(now.getTime() + steps.length * 1000).toISOString(),
+      status: "COMPLETED",
+    });
+
+    const verifiedDeployment: ModelDeployment = {
+      ...airGapDeployment,
+      version: verification.sourceManifest.metadata.version,
+      status: "ACTIVE",
+      deployedAt: steps[steps.length - 1].completedAt,
+      artifactSha256: verification.sourceManifest.sha256,
+      artifactSizeBytes: verification.sourceManifest.sizeBytes,
+      verificationStatus: "VERIFIED",
+    };
+    this.persistence.deployments.save(verifiedDeployment);
+
+    return {
+      artifact: replaceDeployment(artifact, verifiedDeployment),
+      steps,
+      verificationPassed: true,
+      sourceSha256: verification.sourceManifest.sha256,
+      importedSha256: verification.importedSha256,
+      failureReason: null,
+    };
+  }
+
+  async submitIncident(
+    submission: IncidentSubmission,
+  ): Promise<WorkloadResult> {
+    const sequence = this.persistence.nextIncidentSequence();
+    const incident: Incident = {
+      ...submission,
+      id: nextIncidentId(sequence),
+      submittedAt: new Date().toISOString(),
+    };
+
+    const classification = classifyContent(
+      `${incident.title} ${incident.description} ${incident.sampleContent}`,
+    );
+    const conflict = hasClassificationConflict(
+      incident.classification,
+      classification.detectedClassification,
+    );
+
+    if (conflict) {
+      const quarantined: WorkloadResult = {
+        incident,
+        classification,
+        outcome: "QUARANTINED",
+        executionStatus: null,
+        workerExecution: null,
+        executionFailure: null,
+        decision: null,
+        analysis: null,
+      };
+      this.persistence.persistResultAndAudit(
+        quarantined,
+        toAuditEntry(quarantined),
+      );
+      return quarantined;
+    }
+
     const effectiveIncident: Incident = classification.requiresExternalNetwork
       ? { ...incident, requiredNetworkMode: "EXTERNAL" }
       : incident;
+    const decision = evaluateRouting(
+      effectiveIncident,
+      this.persistence.environments.list(),
+    );
 
-    const decision = evaluateRouting(effectiveIncident, state.environments);
-
-    let executionStatus: WorkloadResult["executionStatus"] = null;
-    let workerExecution: WorkerExecutionMetadata | null = null;
-    let executionFailure: WorkerExecutionFailure | null = null;
-    let analysis: WorkloadResult["analysis"] = null;
-
-    if (decision.status === "ROUTED" && decision.selectedEnvironment) {
-      const environment = state.environments.find(
-        (candidate) => candidate.id === decision.selectedEnvironment,
-      );
-
-      if (!environment) {
-        throw new Error("Selected environment was not present in the store.");
-      }
-
-      allocateCapacity(environment, incident.estimatedWorkload);
-      executionStatus = "QUEUED";
-      executionStatus = "RUNNING";
-
-      try {
-        const workerResult = await dispatchIncident(
-          incident,
-          decision.selectedEnvironment,
-        );
-
-        analysis = workerResult.analysis;
-        workerExecution = {
-          environmentId: workerResult.environmentId,
-          startedAt: workerResult.startedAt,
-          completedAt: workerResult.completedAt,
-          executionMode: workerResult.executionMode,
-          workerName: workerResult.workerName,
-        };
-        environment.workerStatus = "ONLINE";
-        executionStatus = "COMPLETED";
-      } catch (error) {
-        const descriptor = getWorkerDescriptor(decision.selectedEnvironment);
-        const reason =
-          error instanceof Error
-            ? error.message
-            : `${descriptor.workerName} execution failed.`;
-
-        executionStatus = "FAILED";
-        executionFailure = {
-          environmentId: decision.selectedEnvironment,
-          workerName: descriptor.workerName,
-          reason: reason.startsWith(descriptor.workerName)
-            ? reason
-            : `${descriptor.workerName}: ${reason}`,
-          failedAt: new Date().toISOString(),
-        };
-        environment.workerStatus =
-          error instanceof WorkerDispatchError
-            ? error.workerStatus
-            : "UNKNOWN";
-      } finally {
-        releaseCapacity(environment, incident.estimatedWorkload);
-      }
+    if (decision.status === "BLOCKED" || !decision.selectedEnvironment) {
+      const blocked: WorkloadResult = {
+        incident,
+        classification,
+        outcome: "BLOCKED",
+        executionStatus: null,
+        workerExecution: null,
+        executionFailure: null,
+        decision,
+        analysis: null,
+      };
+      this.persistence.persistResultAndAudit(blocked, toAuditEntry(blocked));
+      return blocked;
     }
 
-    result = {
+    const selectedEnvironment = decision.selectedEnvironment;
+    const selected = this.persistence.environments
+      .list()
+      .find((environment) => environment.id === selectedEnvironment);
+    if (!selected) {
+      throw new Error("Selected environment was not present in the store.");
+    }
+
+    let result: WorkloadResult = {
       incident,
       classification,
-      outcome: decision.status,
-      executionStatus,
-      workerExecution,
-      executionFailure,
+      outcome: "ROUTED",
+      executionStatus: "QUEUED",
+      workerExecution: null,
+      executionFailure: null,
       decision,
-      analysis,
+      analysis: null,
     };
+
+    this.persistence.database.transaction(() => {
+      this.persistence.environments.allocate(
+        selectedEnvironment,
+        incident.estimatedWorkload,
+      );
+      this.persistence.workloads.save(result);
+    })();
+
+    result = { ...result, executionStatus: "RUNNING" };
+    this.persistence.workloads.save(result);
+
+    try {
+      const workerResult = await dispatchIncident(
+        incident,
+        selectedEnvironment,
+      );
+      const workerExecution: WorkerExecutionMetadata = {
+        environmentId: workerResult.environmentId,
+        startedAt: workerResult.startedAt,
+        completedAt: workerResult.completedAt,
+        executionMode: workerResult.executionMode,
+        workerName: workerResult.workerName,
+      };
+
+      result = {
+        ...result,
+        executionStatus: "COMPLETED",
+        workerExecution,
+        analysis: workerResult.analysis,
+      };
+      this.workerHealth.set(selectedEnvironment, "ONLINE");
+    } catch (error) {
+      const descriptor = getWorkerDescriptor(selectedEnvironment);
+      const reason =
+        error instanceof Error
+          ? error.message
+          : `${descriptor.workerName} execution failed.`;
+      const executionFailure: WorkerExecutionFailure = {
+        environmentId: selectedEnvironment,
+        workerName: descriptor.workerName,
+        reason: reason.startsWith(descriptor.workerName)
+          ? reason
+          : `${descriptor.workerName}: ${reason}`,
+        failedAt: new Date().toISOString(),
+      };
+
+      result = {
+        ...result,
+        executionStatus: "FAILED",
+        executionFailure,
+      };
+      this.workerHealth.set(
+        selectedEnvironment,
+        error instanceof WorkerDispatchError ? error.workerStatus : "UNKNOWN",
+      );
+    } finally {
+      const finalResult = result;
+      this.persistence.database.transaction(() => {
+        this.persistence.environments.release(
+          selectedEnvironment,
+          incident.estimatedWorkload,
+        );
+        this.persistence.workloads.save(finalResult);
+        this.persistence.audits.save(finalResult, toAuditEntry(finalResult));
+      })();
+    }
+
+    return result;
   }
 
-  state.workloads = [result, ...state.workloads];
-  state.auditEntries = [toAuditEntry(result), ...state.auditEntries];
+  private recoverInterruptedExecutions(): void {
+    const interrupted = this.persistence.workloads
+      .list()
+      .filter(
+        (workload) =>
+          workload.executionStatus === "QUEUED" ||
+          workload.executionStatus === "RUNNING",
+      );
 
-  return result;
+    for (const workload of interrupted) {
+      const selectedEnvironment = workload.decision?.selectedEnvironment;
+      if (!selectedEnvironment) {
+        continue;
+      }
+      const descriptor = getWorkerDescriptor(selectedEnvironment);
+      const recovered: WorkloadResult = {
+        ...workload,
+        executionStatus: "FAILED",
+        executionFailure: {
+          environmentId: selectedEnvironment,
+          workerName: descriptor.workerName,
+          reason: `${descriptor.workerName}: control plane restarted before execution completed.`,
+          failedAt: new Date().toISOString(),
+        },
+      };
+      this.persistence.persistResultAndAudit(recovered, toAuditEntry(recovered));
+    }
+  }
+}
+
+function replaceDeployment(
+  artifact: ModelArtifact,
+  updated: ModelDeployment,
+): ModelArtifact {
+  return {
+    ...artifact,
+    deployments: artifact.deployments.map((deployment) =>
+      deployment.environmentId === updated.environmentId
+        ? updated
+        : deployment,
+    ),
+  };
+}
+
+export function createSentinelStore(databasePath?: string): SentinelStore {
+  return new SentinelStore(
+    createPersistence(
+      cloneBaselineEnvironments(),
+      createBaselineDeployments(),
+      databasePath,
+    ),
+  );
+}
+
+const globalForSentinel = globalThis as unknown as {
+  __sentinelStoreService__?: SentinelStore;
+};
+
+function getDefaultStore(): SentinelStore {
+  if (!globalForSentinel.__sentinelStoreService__) {
+    globalForSentinel.__sentinelStoreService__ = createSentinelStore();
+  }
+  return globalForSentinel.__sentinelStoreService__;
+}
+
+export function getEnvironments(): Environment[] {
+  return getDefaultStore().getEnvironments();
+}
+
+export async function refreshWorkerHealth(): Promise<void> {
+  return getDefaultStore().refreshWorkerHealth();
+}
+
+export function listWorkloads(): WorkloadResult[] {
+  return getDefaultStore().listWorkloads();
+}
+
+export function listAuditEntries(): AuditEntry[] {
+  return getDefaultStore().listAuditEntries();
+}
+
+export function getModelArtifact(): ModelArtifact {
+  return getDefaultStore().getModelArtifact();
+}
+
+export function resetStore(): void {
+  getDefaultStore().reset();
+}
+
+export function deployModelToAirGap(
+  importedArtifactBytes?: Uint8Array,
+): AirGapDeploymentResult {
+  return getDefaultStore().deployModelToAirGap(importedArtifactBytes);
+}
+
+export async function submitIncident(
+  submission: IncidentSubmission,
+): Promise<WorkloadResult> {
+  return getDefaultStore().submitIncident(submission);
 }

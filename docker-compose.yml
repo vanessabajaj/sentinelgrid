@@ -9,6 +9,9 @@ services:
       ONPREM_WORKER_URL: http://onprem-worker:4102
       AIRGAP_WORKER_URL: http://airgap-worker:${AIRGAP_WORKER_PORT:-4103}
       WORKER_REQUEST_TIMEOUT_MS: ${WORKER_REQUEST_TIMEOUT_MS:-5000}
+      SENTINEL_DB_PATH: /app/data/sentinelgrid.sqlite
+    volumes:
+      - sentinelgrid-data:/app/data
     ports:
       - "${SENTINELGRID_PORT:-3000}:3000"
     depends_on:
@@ -95,3 +98,6 @@ networks:
   worker-network:
   airgap-internal:
     internal: true
+
+volumes:
+  sentinelgrid-data:
