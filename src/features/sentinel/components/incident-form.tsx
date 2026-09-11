@@ -14,6 +14,8 @@ import type {
 interface IncidentFormProps {
   demoIncidents: Incident[];
   onEvaluate: (incident: Incident) => void;
+  /** Called on every edit so the caller can preview placement live. */
+  onDraftChange?: (incident: Incident) => void;
 }
 
 type IncidentDraft = Omit<Incident, "id" | "sampleContent" | "submittedAt">;
@@ -45,21 +47,43 @@ const EMPTY_DRAFT: IncidentDraft = {
   estimatedWorkload: 10,
 };
 
-const INPUT_CLASS_NAME =
-  "mt-2 w-full rounded-md border border-border bg-surface px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-muted/60 hover:border-muted/50 focus:border-accent focus:ring-2 focus:ring-accent/15";
+const FIELD_CLASS =
+  "mt-1.5 w-full rounded-[var(--radius-sm)] border border-paper-4 bg-paper-0 px-3.5 py-2.5 text-[15px] text-ink-1 outline-none transition-colors placeholder:text-ink-4 focus:border-ink-1";
+
+const LABEL_CLASS =
+  "text-xs font-semibold uppercase tracking-[0.08em] text-ink-3";
+
+function pillClass(active: boolean) {
+  return `rounded-[var(--radius-pill)] border px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
+    active
+      ? "border-ink-1 bg-ink-1 text-paper-0"
+      : "border-paper-3 bg-paper-0 text-ink-2 hover:bg-paper-2"
+  }`;
+}
 
 export function IncidentForm({
   demoIncidents,
   onEvaluate,
+  onDraftChange,
 }: IncidentFormProps) {
   const [draft, setDraft] = useState<IncidentDraft>(EMPTY_DRAFT);
   const [selectedDemoId, setSelectedDemoId] = useState("");
+
+  function applyDraft(next: IncidentDraft) {
+    setDraft(next);
+    onDraftChange?.({
+      ...next,
+      id: "PREVIEW",
+      sampleContent: "",
+      submittedAt: new Date().toISOString(),
+    });
+  }
 
   function updateDraft<Field extends keyof IncidentDraft>(
     field: Field,
     value: IncidentDraft[Field],
   ) {
-    setDraft((current) => ({ ...current, [field]: value }));
+    applyDraft({ ...draft, [field]: value });
   }
 
   function loadDemoScenario(id: string) {
@@ -70,7 +94,7 @@ export function IncidentForm({
       return;
     }
 
-    setDraft({
+    applyDraft({
       title: scenario.title,
       description: scenario.description,
       incidentType: scenario.incidentType,
@@ -86,74 +110,52 @@ export function IncidentForm({
     const selectedDemo = demoIncidents.find(
       (incident) => incident.id === selectedDemoId,
     );
-    const submittedAt = new Date().toISOString();
 
     onEvaluate({
       ...draft,
-      id: `INC-SESSION-${Date.now()}`,
+      id: `JOB-${Date.now()}`,
       sampleContent:
         selectedDemo?.sampleContent ??
-        "SYNTHETIC: Local analyst-created demonstration incident.",
-      submittedAt,
+        "SYNTHETIC: Local analyst-created demonstration job.",
+      submittedAt: new Date().toISOString(),
     });
   }
 
   return (
     <section
-      className="rounded-md border border-border bg-panel"
+      className="rounded-[var(--radius-lg)] border border-paper-3 bg-paper-1 px-6 py-[22px] shadow-[var(--shadow-2)]"
       aria-labelledby="incident-form-heading"
     >
-      <div className="border-b border-border px-5 py-4 sm:px-6">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
-          New evaluation
-        </p>
-        <h2
-          id="incident-form-heading"
-          className="mt-1 text-lg font-semibold text-white"
-        >
-          Submit security incident
-        </h2>
-        <p className="mt-1 text-sm text-muted">
-          Define handling requirements before policy evaluation.
-        </p>
-      </div>
+      <h2
+        id="incident-form-heading"
+        className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-ink-3"
+      >
+        New job
+      </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-6">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label
-            htmlFor="demo-scenario"
-            className="text-xs font-medium text-foreground"
-          >
-            Load demo scenario
+          <label htmlFor="demo-scenario" className={LABEL_CLASS}>
+            Load a scenario
           </label>
           <select
             id="demo-scenario"
             value={selectedDemoId}
             onChange={(event) => loadDemoScenario(event.target.value)}
-            className={INPUT_CLASS_NAME}
+            className={FIELD_CLASS}
           >
-            <option value="">Select a synthetic scenario</option>
-            <option value="INC-DEMO-001">Public CVE Research</option>
-            <option value="INC-DEMO-002">
-              Confidential Authentication Logs
-            </option>
-            <option value="INC-DEMO-003">Classified Telemetry</option>
-            <option value="INC-DEMO-004">
-              Secret External-Network Request
-            </option>
+            <option value="">Choose a synthetic scenario…</option>
+            {demoIncidents.map((incident) => (
+              <option key={incident.id} value={incident.id}>
+                {incident.title}
+              </option>
+            ))}
           </select>
-          <p className="mt-2 text-xs text-muted">
-            Loading a scenario only populates the form. Evaluation remains
-            manual.
-          </p>
         </div>
 
         <div>
-          <label
-            htmlFor="incident-title"
-            className="text-xs font-medium text-foreground"
-          >
-            Incident title
+          <label htmlFor="incident-title" className={LABEL_CLASS}>
+            Name
           </label>
           <input
             id="incident-title"
@@ -161,120 +163,92 @@ export function IncidentForm({
             required
             value={draft.title}
             onChange={(event) => updateDraft("title", event.target.value)}
-            placeholder="Describe the incident briefly"
-            className={INPUT_CLASS_NAME}
+            placeholder="claims-summary-nightly"
+            className={FIELD_CLASS}
           />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label
-              htmlFor="incident-type"
-              className="text-xs font-medium text-foreground"
-            >
-              Incident type
-            </label>
-            <select
-              id="incident-type"
-              value={draft.incidentType}
-              onChange={(event) =>
-                updateDraft("incidentType", event.target.value as IncidentType)
-              }
-              className={INPUT_CLASS_NAME}
-            >
-              {INCIDENT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {formatEnumLabel(type)}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div>
+          <label htmlFor="incident-type" className={LABEL_CLASS}>
+            Workload type
+          </label>
+          <select
+            id="incident-type"
+            value={draft.incidentType}
+            onChange={(event) =>
+              updateDraft("incidentType", event.target.value as IncidentType)
+            }
+            className={FIELD_CLASS}
+          >
+            {INCIDENT_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {formatEnumLabel(type)}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          <div>
-            <label
-              htmlFor="classification"
-              className="text-xs font-medium text-foreground"
-            >
-              Classification
-            </label>
-            <select
-              id="classification"
-              value={draft.classification}
-              onChange={(event) =>
-                updateDraft(
-                  "classification",
-                  event.target.value as Classification,
-                )
-              }
-              className={INPUT_CLASS_NAME}
-            >
-              {CLASSIFICATIONS.map((classification) => (
-                <option key={classification} value={classification}>
-                  {formatEnumLabel(classification)}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col gap-2">
+          <span className={LABEL_CLASS}>Data classification</span>
+          <div className="flex flex-wrap gap-2">
+            {CLASSIFICATIONS.map((classification) => (
+              <button
+                key={classification}
+                type="button"
+                onClick={() => updateDraft("classification", classification)}
+                aria-pressed={draft.classification === classification}
+                className={pillClass(draft.classification === classification)}
+              >
+                {classification.toLowerCase()}
+              </button>
+            ))}
           </div>
+        </div>
 
-          <div>
-            <label
-              htmlFor="severity"
-              className="text-xs font-medium text-foreground"
-            >
-              Severity
-            </label>
-            <select
-              id="severity"
-              value={draft.severity}
-              onChange={(event) =>
-                updateDraft("severity", event.target.value as Severity)
-              }
-              className={INPUT_CLASS_NAME}
-            >
-              {SEVERITIES.map((severity) => (
-                <option key={severity} value={severity}>
-                  {formatEnumLabel(severity)}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col gap-2">
+          <span className={LABEL_CLASS}>Network requirement</span>
+          <div className="flex flex-wrap gap-2">
+            {NETWORK_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => updateDraft("requiredNetworkMode", mode)}
+                aria-pressed={draft.requiredNetworkMode === mode}
+                className={pillClass(draft.requiredNetworkMode === mode)}
+              >
+                {mode === "NONE"
+                  ? "no egress"
+                  : mode === "CONTROLLED"
+                    ? "brokered egress"
+                    : "external network"}
+              </button>
+            ))}
           </div>
+        </div>
 
-          <div>
-            <label
-              htmlFor="network-mode"
-              className="text-xs font-medium text-foreground"
-            >
-              Required network mode
-            </label>
-            <select
-              id="network-mode"
-              value={draft.requiredNetworkMode}
-              onChange={(event) =>
-                updateDraft(
-                  "requiredNetworkMode",
-                  event.target.value as NetworkMode,
-                )
-              }
-              className={INPUT_CLASS_NAME}
-            >
-              {NETWORK_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {formatEnumLabel(mode)}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col gap-2">
+          <span className={LABEL_CLASS}>Severity</span>
+          <div className="flex flex-wrap gap-2">
+            {SEVERITIES.map((severity) => (
+              <button
+                key={severity}
+                type="button"
+                onClick={() => updateDraft("severity", severity)}
+                aria-pressed={draft.severity === severity}
+                className={pillClass(draft.severity === severity)}
+              >
+                {severity.toLowerCase()}
+              </button>
+            ))}
           </div>
         </div>
 
         <div>
           <div className="flex items-center justify-between gap-4">
-            <label
-              htmlFor="workload"
-              className="text-xs font-medium text-foreground"
-            >
-              Estimated workload
+            <label htmlFor="workload" className={LABEL_CLASS}>
+              Capacity needed
             </label>
-            <span className="font-mono text-xs text-accent">
+            <span className="font-mono text-xs text-ink-2">
               {draft.estimatedWorkload} units
             </span>
           </div>
@@ -288,44 +262,36 @@ export function IncidentForm({
             onChange={(event) =>
               updateDraft("estimatedWorkload", Number(event.target.value))
             }
-            className="mt-3 h-1.5 w-full accent-accent"
+            className="mt-3 h-1.5 w-full accent-[var(--accent-honey)]"
           />
-          <div className="mt-2 flex justify-between font-mono text-[10px] text-muted">
-            <span>01</span>
-            <span>100</span>
-          </div>
         </div>
 
         <div>
-          <label
-            htmlFor="description"
-            className="text-xs font-medium text-foreground"
-          >
+          <label htmlFor="description" className={LABEL_CLASS}>
             Description
           </label>
           <textarea
             id="description"
             required
-            rows={4}
+            rows={3}
             value={draft.description}
-            onChange={(event) =>
-              updateDraft("description", event.target.value)
-            }
-            placeholder="Provide synthetic context for this evaluation"
-            className={`${INPUT_CLASS_NAME} resize-y`}
+            onChange={(event) => updateDraft("description", event.target.value)}
+            placeholder="Synthetic context for this evaluation"
+            className={`${FIELD_CLASS} resize-y`}
           />
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-muted">
-            Local simulation · no data leaves this browser
-          </p>
+        <p className="m-0 border-t border-paper-3 pt-3.5 font-reading text-base leading-[1.55] text-ink-3">
+          Placement is previewed alongside before the job is queued. Nothing
+          runs until you submit.
+        </p>
+
+        <div>
           <button
             type="submit"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-[#041512] transition-colors hover:bg-[#62e5d7] focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-panel"
+            className="rounded-[var(--radius-md)] border border-[#B88C1F] bg-[var(--accent-honey)] px-[18px] py-2.5 text-sm font-semibold text-[var(--accent-honey-ink)] shadow-[var(--shadow-inset),var(--shadow-1)] transition-colors hover:bg-[#C89632]"
           >
-            <span aria-hidden="true">→</span>
-            Evaluate Route
+            Submit job
           </button>
         </div>
       </form>

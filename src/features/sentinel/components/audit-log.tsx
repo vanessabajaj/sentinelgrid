@@ -1,103 +1,176 @@
+"use client";
+
+import { useState } from "react";
+
 import {
   formatEnvironmentLabel,
-  formatEnumLabel,
   formatTimestamp,
 } from "@/features/sentinel/components/display-utils";
-import type { AuditEntry } from "@/features/sentinel/types";
+import { environmentTone, TONES } from "@/features/sentinel/components/tones";
+import type { EvaluationResult } from "@/features/sentinel/store/sentinel-store";
+import { DecisionDetailCard } from "@/features/sentinel/components/decision-detail-card";
 
 interface AuditLogProps {
-  entries: AuditEntry[];
+  results: EvaluationResult[];
+  onResetSession?: () => void;
+  /** Expands a row into its full trace when opened. */
+  expandable?: boolean;
 }
 
-export function AuditLog({ entries }: AuditLogProps) {
+type Filter = "all" | "CLOUD" | "ON_PREM" | "AIR_GAPPED" | "BLOCKED";
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "CLOUD", label: "Cloud" },
+  { key: "ON_PREM", label: "On-prem" },
+  { key: "AIR_GAPPED", label: "Air-gapped" },
+  { key: "BLOCKED", label: "Refused" },
+];
+
+export function AuditLog({
+  results,
+  onResetSession,
+  expandable = false,
+}: AuditLogProps) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const rows = results.filter((result) => {
+    if (filter === "all") return true;
+    if (filter === "BLOCKED") return result.decision.status === "BLOCKED";
+    return result.decision.selectedEnvironment === filter;
+  });
+
   return (
-    <section
-      className="overflow-hidden rounded-md border border-border bg-panel"
-      aria-labelledby="audit-heading"
-    >
-      <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4 sm:px-6">
-        <div>
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
-            Decision trail
-          </p>
-          <h2
-            id="audit-heading"
-            className="mt-1 text-lg font-semibold text-white"
+    <section aria-labelledby="audit-heading" className="flex flex-col gap-3.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2
+          id="audit-heading"
+          className="mr-1 text-xs font-semibold uppercase tracking-[0.12em] text-ink-3"
+        >
+          Request stream
+        </h2>
+        {FILTERS.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => setFilter(option.key)}
+            aria-pressed={filter === option.key}
+            className={`rounded-[var(--radius-pill)] border px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
+              filter === option.key
+                ? "border-ink-1 bg-ink-1 text-paper-0"
+                : "border-paper-3 bg-paper-0 text-ink-2 hover:bg-paper-2"
+            }`}
           >
-            Session audit log
-          </h2>
-        </div>
-        <span className="rounded border border-border bg-surface px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted">
-          {entries.length} records
+            {option.label}
+          </button>
+        ))}
+        <span className="ml-auto flex items-center gap-3 font-mono text-[11px] text-ink-3">
+          {rows.length} of {results.length} this session
+          {onResetSession ? (
+            <button
+              type="button"
+              onClick={onResetSession}
+              disabled={results.length === 0}
+              className="rounded-[10px] border border-paper-4 bg-paper-0 px-3 py-1.5 font-sans text-[13px] font-semibold text-ink-1 transition-colors hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Reset session
+            </button>
+          ) : null}
         </span>
       </div>
 
-      {entries.length === 0 ? (
-        <div className="px-6 py-12 text-center">
-          <p className="text-sm font-medium text-foreground">
-            No routing decisions in this session
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            Completed evaluations will appear here, newest first.
-          </p>
+      <div className="overflow-hidden rounded-[var(--radius-lg)] border border-paper-3 bg-paper-1 shadow-[var(--shadow-2)]">
+        <div className="grid grid-cols-[96px_minmax(0,1.6fr)_108px_minmax(0,1.5fr)] gap-3 border-b border-paper-3 bg-paper-2 px-[18px] py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-3">
+          <span>Time</span>
+          <span>Job</span>
+          <span>Class</span>
+          <span>Placed / reason</span>
         </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] border-collapse text-left text-xs">
-            <thead>
-              <tr className="border-b border-border bg-surface/70 text-muted">
-                <th className="px-5 py-3 font-medium">Timestamp</th>
-                <th className="px-5 py-3 font-medium">Decision ID</th>
-                <th className="px-5 py-3 font-medium">Incident</th>
-                <th className="px-5 py-3 font-medium">Classification</th>
-                <th className="px-5 py-3 font-medium">Outcome</th>
-                <th className="px-5 py-3 font-medium">Environment</th>
-                <th className="px-5 py-3 font-medium">Policy</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr
-                  key={`${entry.decisionId}-${entry.timestamp}`}
-                  className="border-b border-border/70 last:border-b-0 hover:bg-panel-raised/50"
-                >
-                  <td className="whitespace-nowrap px-5 py-4 font-mono text-[11px] text-muted">
-                    {formatTimestamp(entry.timestamp)}
-                  </td>
-                  <td className="max-w-52 truncate px-5 py-4 font-mono text-[11px] text-foreground">
-                    {entry.decisionId}
-                  </td>
-                  <td className="max-w-64 truncate px-5 py-4 font-medium text-white">
-                    {entry.incidentTitle}
-                  </td>
-                  <td className="px-5 py-4 font-mono text-[11px] text-foreground">
-                    {formatEnumLabel(entry.classification)}
-                  </td>
-                  <td className="px-5 py-4">
-                    <span
-                      className={`font-mono text-[11px] font-bold ${
-                        entry.outcome === "BLOCKED"
-                          ? "text-danger"
-                          : "text-success"
-                      }`}
-                    >
-                      {entry.outcome}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 font-medium text-foreground">
-                    {entry.selectedEnvironment
-                      ? formatEnvironmentLabel(entry.selectedEnvironment)
-                      : "BLOCKED"}
-                  </td>
-                  <td className="whitespace-nowrap px-5 py-4 font-mono text-[11px] text-muted">
-                    {entry.policyVersion}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+
+        {rows.length === 0 ? (
+          <p className="px-[18px] py-10 text-center font-reading text-base text-ink-3">
+            {results.length === 0
+              ? "No decisions yet — submit a job and every routing decision lands here."
+              : "No decisions match this filter."}
+          </p>
+        ) : (
+          rows.map((result) => {
+            const { decision, incident } = result;
+            const isBlocked = decision.status === "BLOCKED";
+            const tone = isBlocked
+              ? TONES.rose
+              : environmentTone(decision.selectedEnvironment!);
+            const isOpen = openId === decision.id;
+
+            const rowContent = (
+              <>
+                <span className="font-mono text-[11.5px] text-ink-3">
+                  {new Date(decision.evaluatedAt).toLocaleTimeString("en", {
+                    hour12: false,
+                  })}
+                </span>
+                <span className="truncate font-mono text-xs text-ink-1">
+                  {incident.title || incident.id}
+                </span>
+                <span className="font-mono text-[11.5px] text-ink-2">
+                  {incident.classification.toLowerCase()}
+                </span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="size-[7px] flex-none rounded-full"
+                    style={{ background: tone.solid }}
+                    aria-hidden="true"
+                  />
+                  <span className="truncate font-mono text-[11.5px] text-ink-2">
+                    {isBlocked
+                      ? "refused — no eligible environment"
+                      : formatEnvironmentLabel(decision.selectedEnvironment!)}
+                  </span>
+                </span>
+              </>
+            );
+
+            return (
+              <div key={decision.id}>
+                {expandable ? (
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(isOpen ? null : decision.id)}
+                    aria-expanded={isOpen}
+                    className="grid w-full grid-cols-[96px_minmax(0,1.6fr)_108px_minmax(0,1.5fr)] gap-3 border-b border-paper-3 px-[18px] py-3 text-left transition-colors hover:bg-paper-2"
+                    style={{
+                      background: isBlocked
+                        ? "var(--accent-rose-tint)"
+                        : undefined,
+                    }}
+                  >
+                    {rowContent}
+                  </button>
+                ) : (
+                  <div
+                    className="grid grid-cols-[96px_minmax(0,1.6fr)_108px_minmax(0,1.5fr)] gap-3 border-b border-paper-3 px-[18px] py-3"
+                    style={{
+                      background: isBlocked
+                        ? "var(--accent-rose-tint)"
+                        : undefined,
+                    }}
+                    title={formatTimestamp(decision.evaluatedAt)}
+                  >
+                    {rowContent}
+                  </div>
+                )}
+
+                {isOpen ? (
+                  <div className="border-b border-paper-3 bg-paper-0 p-4">
+                    <DecisionDetailCard result={result} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        )}
+      </div>
     </section>
   );
 }

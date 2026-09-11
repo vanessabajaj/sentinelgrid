@@ -1,109 +1,84 @@
 "use client";
 
-import { useReducer } from "react";
+import { useState } from "react";
 
 import { AuditLog } from "@/features/sentinel/components/audit-log";
 import { DashboardSummary } from "@/features/sentinel/components/dashboard-summary";
 import { EnvironmentGrid } from "@/features/sentinel/components/environment-grid";
 import { IncidentAnalysis } from "@/features/sentinel/components/incident-analysis";
 import { IncidentForm } from "@/features/sentinel/components/incident-form";
+import { PageHeader } from "@/features/sentinel/components/page-header";
 import { RoutingDecision } from "@/features/sentinel/components/routing-decision";
-import { generateIncidentAnalysis } from "@/features/sentinel/analysis/generate-incident-analysis";
-import { evaluateRouting } from "@/features/sentinel/routing/evaluate-routing";
+import { useSentinelStore } from "@/features/sentinel/store/sentinel-store";
 import type {
-  AuditEntry,
-  Environment,
   Incident,
-  IncidentAnalysis as Analysis,
   RoutingDecision as Decision,
 } from "@/features/sentinel/types";
 
 interface SentinelWorkspaceProps {
-  environments: Environment[];
   demoIncidents: Incident[];
 }
 
-interface WorkspaceState {
-  latestResult: {
+export function SentinelWorkspace({ demoIncidents }: SentinelWorkspaceProps) {
+  const {
+    environments,
+    results,
+    auditEntries,
+    latestResult,
+    evaluateIncident,
+    previewIncident,
+    resetSession,
+  } = useSentinelStore();
+
+  const [preview, setPreview] = useState<{
     incident: Incident;
     decision: Decision;
-    analysis: Analysis | null;
-  } | null;
-  auditEntries: AuditEntry[];
-}
+  } | null>(null);
 
-type WorkspaceAction = {
-  type: "evaluation-completed";
-  incident: Incident;
-  decision: Decision;
-  analysis: Analysis | null;
-};
+  function handleDraftChange(incident: Incident) {
+    setPreview({ incident, decision: previewIncident(incident) });
+  }
 
-const INITIAL_STATE: WorkspaceState = {
-  latestResult: null,
-  auditEntries: [],
-};
-
-function workspaceReducer(
-  state: WorkspaceState,
-  action: WorkspaceAction,
-): WorkspaceState {
-  const auditEntry: AuditEntry = {
-    decisionId: action.decision.id,
-    timestamp: action.decision.evaluatedAt,
-    incidentTitle: action.incident.title,
-    classification: action.incident.classification,
-    outcome: action.decision.status,
-    selectedEnvironment: action.decision.selectedEnvironment,
-    policyVersion: action.decision.policyVersion,
-  };
-
-  return {
-    latestResult: {
-      incident: action.incident,
-      decision: action.decision,
-      analysis: action.analysis,
-    },
-    auditEntries: [auditEntry, ...state.auditEntries],
-  };
-}
-
-export function SentinelWorkspace({
-  environments,
-  demoIncidents,
-}: SentinelWorkspaceProps) {
-  const [state, dispatch] = useReducer(workspaceReducer, INITIAL_STATE);
-
-  function handleEvaluation(incident: Incident) {
-    const decision = evaluateRouting(incident, environments);
-    const analysis =
-      decision.status === "ROUTED"
-        ? generateIncidentAnalysis(incident)
-        : null;
-
-    dispatch({ type: "evaluation-completed", incident, decision, analysis });
+  function handleEvaluate(incident: Incident) {
+    evaluateIncident(incident);
+    setPreview(null);
   }
 
   return (
-    <div className="space-y-8">
-      <DashboardSummary entries={state.auditEntries} />
+    <>
+      <PageHeader
+        eyebrow="Fleet"
+        title="One workload, three environments"
+        subtitle="Security analysis runs wherever policy allows it. Cloud is cheap and elastic but externally networked; on-prem is a fixed pool; the enclave has no outbound network at all."
+      />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <IncidentForm
-          demoIncidents={demoIncidents}
-          onEvaluate={handleEvaluation}
-        />
-        <RoutingDecision result={state.latestResult} />
-      </div>
-
-      <IncidentAnalysis result={state.latestResult} />
+      <DashboardSummary entries={auditEntries} />
 
       <EnvironmentGrid
         environments={environments}
-        decision={state.latestResult?.decision ?? null}
+        decision={latestResult?.decision ?? null}
+        results={results}
       />
 
-      <AuditLog entries={state.auditEntries} />
-    </div>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <IncidentForm
+          demoIncidents={demoIncidents}
+          onEvaluate={handleEvaluate}
+          onDraftChange={handleDraftChange}
+        />
+        <div className="flex flex-col gap-5">
+          {/* While the form is being edited the preview wins; once a job is
+              submitted the recorded decision takes the panel back. */}
+          <RoutingDecision
+            result={preview ? null : latestResult}
+            previewDecision={preview?.decision ?? null}
+            previewIncident={preview?.incident ?? null}
+          />
+          {preview ? null : <IncidentAnalysis result={latestResult} />}
+        </div>
+      </div>
+
+      <AuditLog results={results} onResetSession={resetSession} expandable />
+    </>
   );
 }

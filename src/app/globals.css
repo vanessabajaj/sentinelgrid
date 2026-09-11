@@ -1,17 +1,76 @@
 @import "tailwindcss";
 
 :root {
-  --background: #071019;
-  --foreground: #dce7f2;
-  --surface: #0a141e;
-  --panel: #0d1925;
-  --panel-raised: #111f2c;
-  --border: #213244;
-  --muted: #8798aa;
-  --accent: #36d6c5;
-  --success: #43d692;
-  --warning: #f3b85b;
-  --danger: #ff7167;
+  /* ---- PAPER — base neutrals (warm off-white parchment) ---- */
+  --paper-0: #fbf7ee;
+  --paper-1: #f5efe1;
+  --paper-2: #ede4d0;
+  --paper-3: #dfd2b4;
+  --paper-4: #c9b791;
+
+  /* ---- INK — text tones (warm charcoal, never pure black) ---- */
+  --ink-1: #231e18;
+  --ink-2: #4a3f31;
+  --ink-3: #7a6b56;
+  --ink-4: #a89679;
+
+  /* ---- ACCENTS — one hue per environment / semantic role ---- */
+  --accent-moss: #5c7a4f;
+  --accent-clay: #c25a2e;
+  --accent-ocean: #2e6b7a;
+  --accent-plum: #6b3e5e;
+  --accent-honey: #d4a53a;
+  --accent-rose: #b84a5e;
+
+  --accent-moss-tint: #e3eadd;
+  --accent-clay-tint: #f4ddd0;
+  --accent-ocean-tint: #d4e3e7;
+  --accent-plum-tint: #e6d8e0;
+  --accent-honey-tint: #f4e7c0;
+  --accent-rose-tint: #efd4d9;
+
+  --accent-moss-ink: #3b5030;
+  --accent-clay-ink: #7a351a;
+  --accent-ocean-ink: #1e4b57;
+  --accent-plum-ink: #4a2742;
+  --accent-honey-ink: #6b5414;
+  --accent-rose-ink: #7a2e3e;
+
+  /* ---- SEMANTIC ---- */
+  --background: var(--paper-0);
+  --foreground: var(--ink-2);
+  --surface: var(--paper-1);
+  --panel: var(--paper-1);
+  --panel-raised: var(--paper-2);
+  --border: var(--paper-3);
+  --border-strong: var(--paper-4);
+  --muted: var(--ink-3);
+  --accent: var(--accent-honey);
+  --success: var(--accent-moss);
+  --warning: var(--accent-clay);
+  --danger: var(--accent-rose);
+  --info: var(--accent-ocean);
+
+  /* ---- SHAPE — radii mimic hand-cut puzzle pieces ---- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+
+  /* ---- ELEVATION — soft paper shadows, never glossy ---- */
+  --shadow-1: 0 1px 0 rgb(35 30 24 / 0.04), 0 1px 2px rgb(35 30 24 / 0.06);
+  --shadow-2: 0 2px 4px rgb(35 30 24 / 0.05), 0 6px 14px rgb(35 30 24 / 0.07);
+  --shadow-3: 0 8px 18px rgb(35 30 24 / 0.1), 0 20px 40px rgb(35 30 24 / 0.1);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 0.6),
+    inset 0 -1px 0 rgb(35 30 24 / 0.06);
+
+  /* ---- MOTION ---- */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
 }
 
 @theme inline {
@@ -21,13 +80,40 @@
   --color-panel: var(--panel);
   --color-panel-raised: var(--panel-raised);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  --font-sans: "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --color-info: var(--info);
+
+  --color-paper-0: var(--paper-0);
+  --color-paper-1: var(--paper-1);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-paper-4: var(--paper-4);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+
+  --color-moss: var(--accent-moss);
+  --color-clay: var(--accent-clay);
+  --color-ocean: var(--accent-ocean);
+  --color-plum: var(--accent-plum);
+  --color-honey: var(--accent-honey);
+  --color-rose: var(--accent-rose);
+
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --font-display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --font-reading: var(--font-instrument-serif), "Iowan Old Style", Georgia,
+    serif;
+  --font-sans: var(--font-jakarta), "Inter", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, Menlo, monospace;
 }
 
 * {
@@ -35,15 +121,17 @@
 }
 
 html {
-  color-scheme: dark;
-  background: var(--background);
+  color-scheme: light;
+  background: var(--paper-0);
 }
 
 body {
   margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  background: var(--paper-0);
+  color: var(--ink-1);
+  font-family: var(--font-jakarta), "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -59,6 +147,35 @@ select {
 }
 
 ::selection {
-  background: rgb(54 214 197 / 0.25);
-  color: #ffffff;
+  background: var(--accent-honey-tint);
+  color: var(--ink-1);
+}
+
+/* ---- Semantic type helpers, mirrored from the design system ---- */
+.t-eyebrow {
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.t-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  font-variation-settings: "opsz" 48;
+  color: var(--ink-1);
+}
+
+.t-reading {
+  font-family: var(--font-instrument-serif), Georgia, serif;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.t-mono {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
 }

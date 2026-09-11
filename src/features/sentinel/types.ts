@@ -81,6 +81,39 @@ export interface AuditEntry {
   policyVersion: string;
 }
 
+export type TransferMethod =
+  | "CI_CD_PUBLISH"
+  | "CONTROLLED_NETWORK_SYNC"
+  | "DATA_DIODE_EXPORT"
+  | "MANUAL_VERIFIED_IMPORT";
+
+export interface DeploymentEnvironmentStatus {
+  environmentId: EnvironmentId;
+  /** Semantic version currently deployed in this environment. */
+  version: string;
+  /** SHA-256 artifact checksum, truncated for display. */
+  checksum: string;
+  deployedAt: string;
+  verified: boolean;
+}
+
+export interface DeploymentTransferStep {
+  id: string;
+  fromEnvironmentId: EnvironmentId | null;
+  toEnvironmentId: EnvironmentId;
+  method: TransferMethod;
+  description: string;
+  occurredAt: string;
+}
+
+export interface DeploymentArtifact {
+  id: string;
+  displayName: string;
+  description: string;
+  environments: DeploymentEnvironmentStatus[];
+  transferLog: DeploymentTransferStep[];
+}
+
 export interface IncidentAnalysis {
   severity: Severity;
   summary: string;

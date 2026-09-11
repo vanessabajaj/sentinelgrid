@@ -2,6 +2,8 @@ import {
   formatEnumLabel,
   formatTimestamp,
 } from "@/features/sentinel/components/display-utils";
+import { TONES } from "@/features/sentinel/components/tones";
+import type { ToneName } from "@/features/sentinel/components/tones";
 import type {
   Incident,
   IncidentAnalysis as Analysis,
@@ -17,11 +19,11 @@ interface IncidentAnalysisProps {
   } | null;
 }
 
-const SEVERITY_STYLES: Record<Severity, string> = {
-  LOW: "border-success/35 bg-success/10 text-success",
-  MEDIUM: "border-accent/35 bg-accent/10 text-accent",
-  HIGH: "border-warning/35 bg-warning/10 text-warning",
-  CRITICAL: "border-danger/35 bg-danger/10 text-danger",
+const SEVERITY_TONE: Record<Severity, ToneName> = {
+  LOW: "moss",
+  MEDIUM: "ocean",
+  HIGH: "clay",
+  CRITICAL: "rose",
 };
 
 export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
@@ -31,147 +33,132 @@ export function IncidentAnalysis({ result }: IncidentAnalysisProps) {
 
   const isBlocked = result.decision.status === "BLOCKED";
 
+  if (isBlocked || !result.analysis) {
+    return (
+      <section
+        className="rounded-[var(--radius-lg)] border px-[22px] py-5 shadow-[var(--shadow-inset)]"
+        style={{
+          background: "var(--accent-clay-tint)",
+          borderColor: "rgba(194,90,46,0.25)",
+        }}
+        aria-labelledby="analysis-heading"
+      >
+        <h2
+          id="analysis-heading"
+          className="mb-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--accent-clay-ink)]"
+        >
+          Analysis not executed
+        </h2>
+        <p className="m-0 font-reading text-base leading-[1.5] text-[var(--accent-clay-ink)]">
+          The job never reached an environment, so no model ran on it. Policy
+          refused the placement and the refusal is what was recorded.
+        </p>
+      </section>
+    );
+  }
+
+  const analysis = result.analysis;
+  const tone = TONES[SEVERITY_TONE[analysis.severity]];
+
   return (
     <section
-      className={`overflow-hidden rounded-md border bg-panel ${
-        isBlocked ? "border-warning/45" : "border-border"
-      }`}
+      className="rounded-[var(--radius-lg)] border border-paper-3 bg-paper-1 px-6 py-[22px] shadow-[var(--shadow-2)]"
       aria-labelledby="analysis-heading"
       aria-live="polite"
     >
-      <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <div>
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
-            Local response intelligence
-          </p>
-          <h2
-            id="analysis-heading"
-            className="mt-1 text-lg font-semibold text-white"
-          >
-            SentinelAI Analysis
-          </h2>
-        </div>
-        <span className="w-fit rounded border border-border bg-surface px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted">
-          Simulated local analysis
+      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
+        <h2
+          id="analysis-heading"
+          className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-3"
+        >
+          Workload output · simulated local analysis
+        </h2>
+        <span className="font-mono text-[11px] text-ink-3">
+          {formatTimestamp(analysis.generatedAt)} ·{" "}
+          {formatEnumLabel(result.incident.incidentType)}
         </span>
       </div>
 
-      {isBlocked || !result.analysis ? (
-        <div className="p-5 sm:p-6">
-          <div className="flex gap-4 rounded-md border border-warning/30 bg-warning/5 p-4">
-            <span
-              className="grid size-8 shrink-0 place-items-center rounded border border-warning/35 bg-warning/10 font-mono text-sm font-bold text-warning"
-              aria-hidden="true"
-            >
-              !
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-white">
-                Analysis not executed
-              </p>
-              <p className="mt-1 text-sm leading-6 text-foreground">
-                Analysis not executed because policy blocked the workload.
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="p-5 sm:p-6">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-md border border-border bg-surface p-4">
-              <p className="text-xs text-muted">Severity</p>
-              <span
-                className={`mt-2 inline-flex rounded border px-2 py-1 font-mono text-[11px] font-bold tracking-wider ${SEVERITY_STYLES[result.analysis.severity]}`}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span
+          className="rounded-[var(--radius-pill)] border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em]"
+          style={{ background: tone.bg, color: tone.fg, borderColor: tone.bc }}
+        >
+          {analysis.severity.toLowerCase()}
+        </span>
+        <span className="font-display text-[19px] font-semibold text-ink-1">
+          {analysis.suspectedAttackType}
+        </span>
+      </div>
+
+      <p className="mt-2.5 mb-0 max-w-[70ch] font-reading text-[17px] leading-[1.55] text-ink-2">
+        {analysis.summary}
+      </p>
+
+      <div className="mt-4 grid gap-5 border-t border-paper-3 pt-4 lg:grid-cols-2">
+        <div>
+          <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-3">
+            Indicators
+          </h3>
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {analysis.indicators.map((indicator) => (
+              <li
+                key={indicator}
+                className="flex gap-2.5 font-mono text-[11.5px] leading-[1.6] text-ink-2"
               >
-                {result.analysis.severity}
-              </span>
-            </div>
-            <div className="rounded-md border border-border bg-surface p-4 sm:col-span-2">
-              <p className="text-xs text-muted">Suspected attack</p>
-              <p className="mt-2 text-sm font-semibold text-white">
-                {result.analysis.suspectedAttackType}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <h3 className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted">
-              Summary
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-foreground">
-              {result.analysis.summary}
-            </p>
-          </div>
-
-          <div className="mt-5 grid gap-5 border-t border-border pt-5 lg:grid-cols-2">
-            <div>
-              <h3 className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted">
-                Indicators
-              </h3>
-              <ul className="mt-3 space-y-2.5">
-                {result.analysis.indicators.map((indicator) => (
-                  <li
-                    key={indicator}
-                    className="flex gap-3 text-sm leading-5 text-foreground"
-                  >
-                    <span
-                      className="mt-2 size-1.5 shrink-0 rounded-full bg-warning"
-                      aria-hidden="true"
-                    />
-                    {indicator}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted">
-                Recommended actions
-              </h3>
-              <ol className="mt-3 space-y-2.5">
-                {result.analysis.recommendedActions.map((action, index) => (
-                  <li
-                    key={action}
-                    className="flex gap-3 text-sm leading-5 text-foreground"
-                  >
-                    <span className="font-mono text-[11px] font-bold text-accent">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    {action}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-end sm:justify-between">
-            <div className="w-full max-w-xs">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted">Confidence</span>
-                <span className="font-mono font-semibold text-accent">
-                  {result.analysis.confidence}%
-                </span>
-              </div>
-              <div
-                className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface"
-                role="progressbar"
-                aria-label="Analysis confidence"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={result.analysis.confidence}
-              >
-                <div
-                  className="h-full rounded-full bg-accent"
-                  style={{ width: `${result.analysis.confidence}%` }}
+                <span
+                  className="mt-1.5 size-1.5 flex-none rounded-full"
+                  style={{ background: "var(--accent-clay)" }}
+                  aria-hidden="true"
                 />
-              </div>
-            </div>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-muted">
-              Generated {formatTimestamp(result.analysis.generatedAt)} · {formatEnumLabel(result.incident.incidentType)}
-            </p>
-          </div>
+                {indicator}
+              </li>
+            ))}
+          </ul>
         </div>
-      )}
+
+        <div>
+          <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-3">
+            Recommended actions
+          </h3>
+          <ol className="m-0 flex list-none flex-col gap-2 p-0">
+            {analysis.recommendedActions.map((action, index) => (
+              <li
+                key={action}
+                className="flex gap-2.5 text-sm leading-[1.5] text-ink-2"
+              >
+                <span className="font-mono text-[11px] font-semibold text-ink-4">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                {action}
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3 border-t border-paper-3 pt-4">
+        <span className="text-[13px] text-ink-3">Confidence</span>
+        <div
+          className="h-[7px] w-40 overflow-hidden rounded-[var(--radius-pill)] bg-paper-2 shadow-[var(--shadow-inset)]"
+          role="progressbar"
+          aria-label="Analysis confidence"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={analysis.confidence}
+        >
+          <div
+            className="h-full"
+            style={{
+              width: `${analysis.confidence}%`,
+              background: "var(--accent-honey)",
+            }}
+          />
+        </div>
+        <span className="font-mono text-[13px] font-semibold text-ink-2">
+          {analysis.confidence}%
+        </span>
+      </div>
     </section>
   );
 }

@@ -1,73 +1,128 @@
-import type { AuditEntry } from "@/features/sentinel/types";
+import Link from "next/link";
+
+import { formatEnvironmentLabel } from "@/features/sentinel/components/display-utils";
+import { environmentTone } from "@/features/sentinel/components/tones";
+import type { AuditEntry, EnvironmentId } from "@/features/sentinel/types";
 
 interface DashboardSummaryProps {
   entries: AuditEntry[];
 }
 
-const METRICS = [
-  { key: "total", label: "Total Evaluations", marker: "Σ" },
-  { key: "cloud", label: "Cloud Routes", marker: "CLD" },
-  { key: "onPrem", label: "On-Prem Routes", marker: "ONP" },
-  { key: "airGap", label: "Air-Gapped Routes", marker: "AIR" },
-  { key: "blocked", label: "Blocked Requests", marker: "!" },
-] as const;
+const ENVIRONMENTS: EnvironmentId[] = ["CLOUD", "ON_PREM", "AIR_GAPPED"];
+
+const HREFS: Record<EnvironmentId, string> = {
+  CLOUD: "/routes/cloud",
+  ON_PREM: "/routes/on-prem",
+  AIR_GAPPED: "/routes/air-gapped",
+};
 
 export function DashboardSummary({ entries }: DashboardSummaryProps) {
-  const values = {
-    total: entries.length,
-    cloud: entries.filter(
-      (entry) => entry.selectedEnvironment === "CLOUD",
-    ).length,
-    onPrem: entries.filter(
-      (entry) => entry.selectedEnvironment === "ON_PREM",
-    ).length,
-    airGap: entries.filter(
-      (entry) => entry.selectedEnvironment === "AIR_GAPPED",
-    ).length,
-    blocked: entries.filter((entry) => entry.outcome === "BLOCKED").length,
-  };
+  const blocked = entries.filter((entry) => entry.outcome === "BLOCKED").length;
+  const routed = entries.length - blocked;
 
   return (
-    <section aria-labelledby="summary-heading">
-      <div className="mb-3 flex items-end justify-between gap-4">
-        <div>
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
-            Live session
-          </p>
-          <h2
-            id="summary-heading"
-            className="mt-1 text-lg font-semibold text-white"
-          >
-            Routing overview
-          </h2>
+    <section
+      aria-labelledby="summary-heading"
+      className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]"
+    >
+      <div className="rounded-[var(--radius-lg)] border border-paper-3 bg-paper-1 px-[22px] py-5 shadow-[var(--shadow-2)]">
+        <h2
+          id="summary-heading"
+          className="mb-3.5 text-xs font-semibold uppercase tracking-[0.12em] text-ink-3"
+        >
+          This session
+        </h2>
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(108px,1fr))]">
+          <div>
+            <div className="font-display text-[30px] font-semibold leading-none text-ink-1">
+              {routed}
+            </div>
+            <div className="mt-1.5 text-[12.5px] text-ink-3">jobs routed</div>
+          </div>
+          <div>
+            <div
+              className="font-display text-[30px] font-semibold leading-none"
+              style={{
+                color: blocked > 0 ? "var(--accent-rose)" : "var(--ink-1)",
+              }}
+            >
+              {blocked}
+            </div>
+            <div className="mt-1.5 text-[12.5px] text-ink-3">
+              refused by policy
+            </div>
+          </div>
+          <div>
+            <div className="font-display text-[30px] font-semibold leading-none text-ink-1">
+              {entries.length}
+            </div>
+            <div className="mt-1.5 text-[12.5px] text-ink-3">
+              decisions logged
+            </div>
+          </div>
         </div>
-        <p className="hidden text-xs text-muted sm:block">
-          In-memory metrics · resets on refresh
-        </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        {METRICS.map((metric) => (
-          <article
-            key={metric.key}
-            className="rounded-md border border-border bg-panel px-4 py-4"
+      <div className="rounded-[var(--radius-lg)] border border-paper-3 bg-paper-1 px-[22px] py-5 shadow-[var(--shadow-2)]">
+        <div className="mb-3.5 flex items-center justify-between gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-3">
+            Where work landed
+          </h2>
+          <Link
+            href="/stream"
+            className="rounded-[10px] border border-paper-4 bg-paper-1 px-3 py-1.5 text-[13px] font-semibold text-ink-1 no-underline transition-colors hover:bg-paper-2"
           >
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-xs font-medium text-muted">{metric.label}</p>
-              <span
-                className={`font-mono text-[10px] font-bold tracking-wider ${
-                  metric.key === "blocked" ? "text-warning" : "text-accent"
-                }`}
-                aria-hidden="true"
+            Request stream
+          </Link>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {ENVIRONMENTS.map((environmentId) => {
+            const count = entries.filter(
+              (entry) => entry.selectedEnvironment === environmentId,
+            ).length;
+            const tone = environmentTone(environmentId);
+
+            return (
+              <Link
+                key={environmentId}
+                href={HREFS[environmentId]}
+                className="flex items-center gap-3 rounded-[var(--radius-md)] border border-paper-3 bg-paper-0 px-3.5 py-2.5 no-underline transition-colors hover:bg-paper-2"
               >
-                {metric.marker}
-              </span>
-            </div>
-            <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-white">
-              {values[metric.key].toString().padStart(2, "0")}
-            </p>
-          </article>
-        ))}
+                <span
+                  className="size-2 flex-none rounded-full"
+                  style={{ background: tone.solid }}
+                  aria-hidden="true"
+                />
+                <span className="flex-1 text-sm font-medium text-ink-1">
+                  {formatEnvironmentLabel(environmentId)}
+                </span>
+                <span className="font-mono text-[13px] text-ink-2">
+                  {count}
+                </span>
+              </Link>
+            );
+          })}
+          <Link
+            href="/routes/blocked"
+            className="flex items-center gap-3 rounded-[var(--radius-md)] border px-3.5 py-2.5 no-underline transition-colors"
+            style={{
+              background:
+                blocked > 0 ? "var(--accent-rose-tint)" : "var(--paper-0)",
+              borderColor:
+                blocked > 0 ? "rgba(184,74,94,0.25)" : "var(--paper-3)",
+            }}
+          >
+            <span
+              className="size-2 flex-none rounded-full"
+              style={{ background: "var(--accent-rose)" }}
+              aria-hidden="true"
+            />
+            <span className="flex-1 text-sm font-medium text-ink-1">
+              Refused
+            </span>
+            <span className="font-mono text-[13px] text-ink-2">{blocked}</span>
+          </Link>
+        </div>
       </div>
     </section>
   );
